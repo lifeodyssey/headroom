@@ -91,13 +91,14 @@ def test_header_path_falls_through_when_empty_after_sanitization() -> None:
 
 def test_hash_path_when_no_header_but_auth_mode_and_bearer() -> None:
     """No header, but auth_mode + bearer ⇒ deterministic SHA-256[:24]."""
+    token = "sk-ant-api03-abc123def456ghi789"
     req = _request(
-        headers={"authorization": "Bearer sk-ant-api03-abc123def456ghi789"},
+        headers={"authorization": f"Bearer {token}"},
         auth_mode="payg",
     )
     tenant_key, source = resolve_tenant_key(req)
     assert source == SOURCE_HASH
-    expected = hashlib.sha256(b"payg:sk-ant-a").hexdigest()[:24]
+    expected = hashlib.sha256(f"payg:{token}".encode()).hexdigest()[:24]
     assert tenant_key == expected
     assert len(tenant_key) == 24
 
@@ -110,8 +111,8 @@ def test_hash_path_different_auth_modes_produce_different_keys() -> None:
     assert payg != oauth
 
 
-def test_hash_path_same_inputs_produce_same_key() -> None:
-    """Hash is stable: same auth_mode + same bearer prefix ⇒ same key."""
+def test_hash_path_full_bearer_token_prevents_prefix_collision() -> None:
+    """Hash uses the full bearer token, not only the provider prefix."""
     req1 = _request(
         headers={"authorization": "Bearer sk-ant-api03-aaa"},
         auth_mode="payg",
@@ -120,8 +121,13 @@ def test_hash_path_same_inputs_produce_same_key() -> None:
         headers={"authorization": "Bearer sk-ant-api03-bbb"},  # tail differs
         auth_mode="payg",
     )
-    # Both share the first 8 bearer chars (``sk-ant-a``), so the
-    # hash is stable across the tail variation.
+    assert resolve_tenant_key(req1)[0] != resolve_tenant_key(req2)[0]
+
+def test_hash_path_same_inputs_produce_same_key() -> None:
+    """Hash is stable: same auth_mode + same bearer token ⇒ same key."""
+    bearer = "Bearer sk-ant-api03-aaa"
+    req1 = _request(headers={"authorization": bearer}, auth_mode="payg")
+    req2 = _request(headers={"authorization": bearer}, auth_mode="payg")
     assert resolve_tenant_key(req1)[0] == resolve_tenant_key(req2)[0]
 
 

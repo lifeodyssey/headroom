@@ -30,14 +30,13 @@ The resolver picks the most-specific signal available, in this order:
 
 2. **Hash** — when no header is present but both an auth_mode (from
    F1) and a bearer token are. The key is
-   ``sha256("{auth_mode}:{api_key_prefix}")[:24]`` where
-   ``api_key_prefix`` is the first 8 chars of the bearer token. Source:
-   ``"hash"``. SHA-256[:24] is the same idiom PR #395 uses in
+   ``sha256("{auth_mode}:{api_key}")[:24]``. Source: ``"hash"``.
+   SHA-256[:24] is the same idiom PR #395 uses in
    ``headroom/cache/compression_store.py`` for content hashing — keeping
    it consistent so operators only need to learn one truncation rule.
-   8 chars of bearer prefix is enough to disambiguate distinct API
-   keys without leaking the secret (a 64-char API key has 56 chars of
-   unobserved entropy after the prefix).
+   Hashing the full bearer token avoids collisions across real API keys
+   that intentionally share visible prefixes (for example provider key
+   prefixes) without logging or storing the secret itself.
 
 3. **Global** — the literal ``"global"`` namespace, used only when
    neither a tenant-id header nor an auth bearer is present (the OSS
@@ -117,7 +116,7 @@ _MAX_TENANT_KEY_LEN: Final[int] = 64
 # all have ≥ 32 char keys with high-entropy first 8 chars after the
 # common prefix) without leaking the secret. Anyone who can read the
 # logs already sees the request, so 8 chars gives them no advantage.
-_BEARER_PREFIX_LEN: Final[int] = 8
+_MIN_BEARER_TOKEN_LEN: Final[int] = 8
 
 # SHA-256[:24] truncation — same idiom as PR #395
 # (``compression_store.py`` line 241). Keeping the truncation length
@@ -193,7 +192,7 @@ def resolve_tenant_key(request: Any) -> tuple[str, str]:
 
     1. ``HEADROOM_TENANT_KEY_HEADER`` (default ``X-Headroom-Tenant-ID``)
        header → ``"header"`` source.
-    2. SHA-256[:24] of ``f"{auth_mode}:{bearer_prefix}"`` → ``"hash"``.
+    2. SHA-256[:24] of ``f"{auth_mode}:{bearer_token}"`` → ``"hash"``.
     3. Literal ``"global"`` namespace → ``"global"`` source.
 
     Every resolution emits a ``tenant_key_resolved`` structured log so
@@ -232,9 +231,9 @@ def resolve_tenant_key(request: Any) -> tuple[str, str]:
 
     # ── 2. Hash path ──────────────────────────────────────────────────
     auth_mode_str = _get_auth_mode_str(request)
-    bearer_prefix = _get_bearer_prefix(request)
-    if auth_mode_str and bearer_prefix:
-        digest = hashlib.sha256(f"{auth_mode_str}:{bearer_prefix}".encode()).hexdigest()
+    bearer_token = _get_bearer_token(request)
+    if auth_mode_str and bearer_token:
+        digest = hashlib.sha256(f"{auth_mode_str}:{bearer_token}".encode()).hexdigest()
         tenant_key = digest[:_HASH_TRUNCATION_LEN]
         _emit_resolution_log(tenant_key, SOURCE_HASH, auth_mode=auth_mode_str)
         return tenant_key, SOURCE_HASH
@@ -302,13 +301,13 @@ def _get_auth_mode_str(request: Any) -> str:
     return str(auth_mode)
 
 
-def _get_bearer_prefix(request: Any) -> str:
-    """Return the first :data:`_BEARER_PREFIX_LEN` chars of the bearer token.
+def _get_bearer_token(request: Any) -> str:
+    """Return the full bearer token from ``Authorization``.
 
     Empty string if no ``Authorization: Bearer ...`` header is present
-    OR if the token is shorter than the prefix length (in which case
-    we'd be hashing a low-entropy fragment, which gives a useless
-    tenant_key).
+    OR if the token is shorter than :data:`_MIN_BEARER_TOKEN_LEN` (in
+    which case we'd be hashing a low-entropy value, which gives a
+    useless tenant_key).
     """
     auth = _get_header(request, "authorization")
     if not auth.startswith("Bearer "):
@@ -317,9 +316,9 @@ def _get_bearer_prefix(request: Any) -> str:
         # add SigV4 support later; for now we fall through to global.
         return ""
     token = auth[len("Bearer ") :]
-    if len(token) < _BEARER_PREFIX_LEN:
+    if len(token) < _MIN_BEARER_TOKEN_LEN:
         return ""
-    return token[:_BEARER_PREFIX_LEN]
+    return token
 
 
 def _sanitize_tenant_key(raw: str) -> str:
@@ -400,7 +399,7 @@ def _emit_resolution_log(
     The ``tenant_key`` value itself is included in the structured
     fields. It's not a secret: header-mode keys are operator-supplied
     identifiers and hash-mode keys are SHA-256 truncations of an
-    ``(auth_mode, bearer_prefix)`` pair (irreversible).
+    ``(auth_mode, bearer_token)`` pair (irreversible).
     """
     extra: dict[str, Any] = {
         "event": "tenant_key_resolved",

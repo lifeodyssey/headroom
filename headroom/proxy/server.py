@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import concurrent.futures
+import contextvars
 import contextlib
 import json
 import logging
@@ -716,6 +717,7 @@ class HeadroomProxy(
         """
         loop = asyncio.get_running_loop()
         queued_at = time.monotonic()
+        request_context = contextvars.copy_context()
         state = {"queued": True, "timed_out": False}
         with self._compression_metrics_lock:
             self._compression_queued += 1
@@ -736,7 +738,7 @@ class HeadroomProxy(
                 if self._compression_in_flight > self._compression_in_flight_max:
                     self._compression_in_flight_max = self._compression_in_flight
             try:
-                return fn()
+                return request_context.run(fn)
             finally:
                 elapsed = time.monotonic() - started_at
                 with self._compression_metrics_lock:
