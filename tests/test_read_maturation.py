@@ -246,6 +246,48 @@ class TestCcrIntegration:
         assert entry.compression_strategy == "read_maturation"
 
 
+class TestProxyWiring:
+    def test_proxy_config_flag_default_off(self):
+        from headroom.proxy.models import ProxyConfig
+
+        assert ProxyConfig().read_maturation is False
+        assert ProxyConfig(read_maturation=True).read_maturation is True
+
+    def test_session_state_rides_on_prefix_tracker(self):
+        """The handler's session-state flow: a manager attached to the
+        tracker carries matured markers across requests."""
+        from headroom.cache.prefix_tracker import PrefixCacheTracker
+        from headroom.config import ReadMaturationConfig
+        from headroom.transforms.read_maturation import (
+            ReadMaturationManager,
+            relocate_cache_breakpoint,
+        )
+
+        tracker = PrefixCacheTracker("anthropic")
+        assert tracker.read_maturation_manager is None
+
+        # Request 1: fresh read — held; breakpoint relocated.
+        tracker.read_maturation_manager = ReadMaturationManager(
+            ReadMaturationConfig(enabled=True, quiesce_turns=5)
+        )
+        msgs = base_conv()
+        msgs[2]["content"][0] = {
+            **msgs[2]["content"][0],
+        }
+        res = tracker.read_maturation_manager.apply(msgs)
+        assert res.holding_msg_indices == [2]
+        out = relocate_cache_breakpoint(res.messages, res.holding_msg_indices)
+        assert len(out) == len(msgs)
+
+        # Request N (file quiet): same manager matures and replays.
+        later = [*base_conv(), *quiet(5)]
+        res = tracker.read_maturation_manager.apply(later)
+        assert res.newly_matured == 1
+        replay = tracker.read_maturation_manager.apply(later)
+        assert replay.replacements_applied == 1
+        assert replay.newly_matured == 0
+
+
 class TestBreakpointRelocation:
     def _msgs_with_tail_breakpoint(self) -> list[dict]:
         msgs = [

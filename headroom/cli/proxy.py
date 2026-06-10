@@ -375,6 +375,16 @@ def _selected_context_tool() -> str:
     is_flag=True,
     help="Disable Read lifecycle management (stale/superseded Read compression)",
 )
+# Read maturation (Mechanism B) — experimental, OFF by default
+@click.option(
+    "--read-maturation",
+    is_flag=True,
+    help=(
+        "EXPERIMENTAL: activity-based read maturation — hold fresh Reads "
+        "out of the provider prefix cache and compress them once their "
+        "file quiesces (env: HEADROOM_READ_MATURATION=1)"
+    ),
+)
 # Memory System (Multi-Provider Support)
 @click.option(
     "--memory",
@@ -625,6 +635,7 @@ def proxy(
     disable_kompress: bool,
     code_graph: bool,
     no_read_lifecycle: bool,
+    read_maturation: bool,
     memory: bool,
     memory_db_path: str,
     memory_storage: str,
@@ -836,6 +847,8 @@ def proxy(
         code_graph_watcher=code_graph,
         # Read lifecycle: ON by default (use --no-read-lifecycle to disable)
         read_lifecycle=not no_read_lifecycle,
+        # Read maturation (Mechanism B): experimental, OFF by default
+        read_maturation=read_maturation,
         # Memory System (Multi-Provider with auto-detection)
         # --learn implies --memory (need backend for storing patterns)
         # Stateless mode disables memory (requires SQLite on disk)
