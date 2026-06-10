@@ -256,6 +256,39 @@ class ReadLifecycleConfig:
 
 
 @dataclass
+class ReadMaturationConfig:
+    """Mechanism B: hold-back Read maturation (compress before cache entry).
+
+    Motivation (measured by `headroom audit-reads`): the median Read stays
+    in context for ~118 assistant turns after it appears, billed at the
+    provider's cache-read rate every request — a Read's lifetime cost is
+    roughly 13x its size. The only cache-safe moment to shrink it is
+    BEFORE it is ever cache-written.
+
+    Mechanics: a fresh large Read is held out of the provider prefix
+    cache (the trailing cache breakpoint is relocated to just before it)
+    for `hold_requests` requests, during which the model sees it verbatim
+    and acts on it. On maturation the content is replaced with a
+    CCR-backed marker; only that final compressed form ever enters the
+    cache. No cached byte is ever mutated — there is nothing to bust.
+
+    Hold-back economics: holding costs (1.0 - read_discount) x size per
+    held request, repaid by skipping the cache-write premium on the
+    verbatim form and by every subsequent turn reading the small form.
+    Break-even is ~2 requests after maturation at 80% compression.
+
+    Disabled by default while the mechanism is validated in pilots.
+    """
+
+    enabled: bool = False
+    # Requests a fresh Read stays verbatim (and uncached) before maturing.
+    hold_requests: int = 1
+    # Only hold/mature Reads at least this large; small Reads are cached
+    # immediately as before (holding them costs more than it saves).
+    min_size_bytes: int = 2048
+
+
+@dataclass
 class CompressionProfile:
     """Per-tool compression bias applied to statistically-determined K.
 
