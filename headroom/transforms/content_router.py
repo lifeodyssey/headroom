@@ -1704,6 +1704,12 @@ class ContentRouter(Transform):
         # rather than ModernBERT, keeping the request path bounded.
         if self._kompress_max_tokens > 0 and len(text_to_compress) > self._kompress_max_tokens * 4:
             self._kompress_gate_fires += 1
+            logger.info(
+                "kompress size-gate fired: ~%d tok (>%d) routed off ML (fire #%d)",
+                len(text_to_compress) // 4,
+                self._kompress_max_tokens,
+                self._kompress_gate_fires,
+            )
             out = text_to_compress
             if self.config.enable_log_compressor:
                 lc = self._get_log_compressor()
