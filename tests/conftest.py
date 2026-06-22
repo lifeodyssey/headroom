@@ -68,10 +68,11 @@ def _reset_headroom_logger_propagation():
     """
     import logging as _logging
 
-    _logging.getLogger("headroom").propagate = True
-    for _name in list(_logging.root.manager.loggerDict):
-        if _name.startswith("headroom."):
-            _logging.getLogger(_name).propagate = True
+    for _name in ("headroom", *list(_logging.root.manager.loggerDict)):
+        if _name == "headroom" or _name.startswith("headroom."):
+            logger = _logging.getLogger(_name)
+            logger.disabled = False
+            logger.propagate = True
     yield
 
 
