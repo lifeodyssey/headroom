@@ -954,6 +954,13 @@ class ContentRouter(Transform):
         except ValueError:
             self._kompress_max_tokens = 50000
         self._kompress_gate_fires: int = 0
+        # Phase 2 (#1171): when enabled, the size-gate routes oversized text to
+        # the fast extractive TextCrusher (real prose savings) instead of the
+        # LogCompressor (~0 savings on prose). Opt-in, default off.
+        self._text_crusher_enabled: bool = os.environ.get(
+            "HEADROOM_TEXT_CRUSHER", ""
+        ).strip().lower() in ("1", "true", "yes", "on")
+        self._text_crusher: Any = None
 
         # TOIN integration for cross-strategy learning
         self._toin: Any = None
@@ -1711,7 +1718,16 @@ class ContentRouter(Transform):
                 self._kompress_gate_fires,
             )
             out = text_to_compress
-            if self.config.enable_log_compressor:
+            crusher = self._get_text_crusher()
+            if crusher is not None:
+                try:
+                    out = crusher.compress(text_to_compress, context=context or "").compressed
+                except Exception as e:
+                    logger.warning(
+                        "Kompress size-gate -> TextCrusher failed (%s); passing through", e
+                    )
+                    out = text_to_compress
+            elif self.config.enable_log_compressor:
                 lc = self._get_log_compressor()
                 if lc:
                     try:
@@ -1855,6 +1871,16 @@ class ContentRouter(Transform):
             except ImportError:
                 logger.debug("LogCompressor not available")
         return self._log_compressor
+
+    def _get_text_crusher(self) -> Any:
+        """Get TextCrusher (Phase 2, lazy load). Returns None when disabled."""
+        if not getattr(self, "_text_crusher_enabled", False):
+            return None
+        if self._text_crusher is None:
+            from .text_crusher import TextCrusher
+
+            self._text_crusher = TextCrusher()
+        return self._text_crusher
 
     def _get_tabular_compressor(self) -> Any:
         """Get TabularCompressor (lazy load)."""
