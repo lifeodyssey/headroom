@@ -105,6 +105,7 @@ from headroom.providers.registry import (
 )
 from headroom.proxy import runtime_env
 from headroom.proxy.auth_mode import should_stamp_codex_client
+from headroom.proxy.background_compression import BackgroundCompressor
 
 # =============================================================================
 # Extracted modules (re-exported for backward compatibility)
@@ -778,6 +779,22 @@ class HeadroomProxy(
             max_workers=_compression_max,
             thread_name_prefix="headroom-compress",
         )
+        # Phase 3 (#1171): off-path background compression. When enabled, a
+        # cold-start-large request (frozen=0 + large live zone) forwards
+        # uncompressed immediately and enqueues the compression here instead of
+        # blocking the request thread under the 30s budget (which leaks a
+        # non-preemptible worker -> executor saturation -> cascade). Default
+        # off (opt-in), fail-open. Per-process, matching _compression_caches.
+        self._background_compression_enabled: bool = os.environ.get(
+            "HEADROOM_BACKGROUND_COMPRESSION", ""
+        ).strip().lower() in ("1", "true", "yes", "on")
+        try:
+            self._background_compression_min_tokens: int = int(
+                os.environ.get("HEADROOM_BACKGROUND_COMPRESSION_MIN_TOKENS", "50000")
+            )
+        except ValueError:
+            self._background_compression_min_tokens = 50000
+        self._background_compressor = BackgroundCompressor(self._run_compression_background)
         # Gauge: currently-running compression tasks. Mutated under
         # ``_compression_metrics_lock`` from worker threads + the asyncio
         # event loop.
@@ -1077,6 +1094,17 @@ class HeadroomProxy(
                     state["queued"] = False
                     self._compression_queue_timeouts += 1
             raise
+
+    async def _run_compression_background(self, fn):  # noqa: ANN001, ANN201
+        """Run a compression callable on the shared executor with NO request-
+        coupled deadline (Phase 3 off-path, #1171).
+
+        Unlike ``_run_compression_in_executor`` there is no ``asyncio.wait_for``
+        and no leaked-thread accounting: no caller is waiting, so a slow run
+        backs up the background queue rather than starving the request executor.
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(self._compression_executor, fn)
 
     def _get_compression_cache(self, session_id: str) -> CompressionCache:
         """Get or create a CompressionCache for a session.
@@ -1816,6 +1844,8 @@ def create_app(config: ProxyConfig | None = None) -> FastAPI:
                     await proxy.usage_reporter.start(proxy)
                 if proxy.traffic_learner:
                     await proxy.traffic_learner.start()
+                if proxy._background_compression_enabled:
+                    await proxy._background_compressor.start()
 
                 # Only start beacon if we acquire the lock (first worker wins)
                 _beacon_is_owner[0] = _try_acquire_beacon_lock()
@@ -1850,6 +1880,8 @@ def create_app(config: ProxyConfig | None = None) -> FastAPI:
                 await proxy.usage_reporter.stop()
             if proxy.traffic_learner:
                 await proxy.traffic_learner.stop()
+            if proxy._background_compression_enabled:
+                await proxy._background_compressor.stop()
             if proxy.code_graph_watcher:
                 proxy.code_graph_watcher.stop()
             await proxy.shutdown()

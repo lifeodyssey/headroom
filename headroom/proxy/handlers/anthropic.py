@@ -1064,30 +1064,69 @@ class AnthropicHandlerMixin:
                         # Record all tool_results in the verified frozen prefix as stable
                         comp_cache.mark_stable_from_messages(messages, frozen_message_count)
 
-                        async with stage_timer.measure("compression_first_stage"):
-                            result = await self._run_compression_in_executor(
+                        # Phase 3 (#1171): off-path deferral gate. On a cold-
+                        # start-large request (frozen=0 + large live zone) the
+                        # synchronous kompress run would blow the 30s budget and
+                        # leak a non-preemptible worker. Forward the cache-
+                        # swapped messages uncompressed NOW and compress off the
+                        # request path; the result lands in the SAME
+                        # CompressionCache and apply_cached swaps it in (live
+                        # zone) on a later turn. Byte-identity holds — see the
+                        # frozen/live invariant; one-time upstream cache miss
+                        # when the compressed form first lands, then stable.
+                        if (
+                            getattr(self, "_background_compression_enabled", False)
+                            and frozen_message_count == 0
+                            and original_tokens >= self._background_compression_min_tokens
+                        ):
+                            _bg_messages = messages
+                            _bg_working = working_messages
+                            _bg_frozen = frozen_message_count
+                            self._background_compressor.enqueue(
+                                f"{session_id}:{comp_cache.content_hash(_bg_working)}",
                                 lambda: self.anthropic_pipeline.apply(
-                                    messages=working_messages,
+                                    messages=_bg_working,
                                     model=model,
                                     model_limit=context_limit,
-                                    context=extract_user_query(working_messages),
-                                    frozen_message_count=frozen_message_count,
+                                    context=extract_user_query(_bg_working),
+                                    frozen_message_count=_bg_frozen,
                                     biases=biases,
                                     request_id=request_id,
                                     compression_policy=compression_policy,
                                     **proxy_pipeline_kwargs(self.config),
                                 ),
-                                timeout=COMPRESSION_TIMEOUT_SECONDS,
+                                lambda result: comp_cache.update_from_result(
+                                    _bg_messages, result.messages
+                                ),
                             )
+                            optimized_messages = working_messages
+                            transforms_applied = ["deferred:background_compression"]
+                            pipeline_timing = {}
+                        else:
+                            async with stage_timer.measure("compression_first_stage"):
+                                result = await self._run_compression_in_executor(
+                                    lambda: self.anthropic_pipeline.apply(
+                                        messages=working_messages,
+                                        model=model,
+                                        model_limit=context_limit,
+                                        context=extract_user_query(working_messages),
+                                        frozen_message_count=frozen_message_count,
+                                        biases=biases,
+                                        request_id=request_id,
+                                        compression_policy=compression_policy,
+                                        **proxy_pipeline_kwargs(self.config),
+                                    ),
+                                    timeout=COMPRESSION_TIMEOUT_SECONDS,
+                                )
 
-                        # Cache newly compressed messages (index-aligned diff)
-                        if result.messages != working_messages:
-                            comp_cache.update_from_result(messages, result.messages)
+                            # Cache newly compressed messages (index-aligned diff)
+                            if result.messages != working_messages:
+                                comp_cache.update_from_result(messages, result.messages)
 
-                        # Always use pipeline result — Zone 1 swaps are already applied
-                        optimized_messages = result.messages
-                        transforms_applied = result.transforms_applied
-                        pipeline_timing = result.timing
+                            # Always use pipeline result — Zone 1 swaps applied
+                            optimized_messages = result.messages
+                            transforms_applied = result.transforms_applied
+                            pipeline_timing = result.timing
                         # Issue #327 / Bug 3: pipeline.apply uses the provider-
                         # side tokenizer (AnthropicProvider tiktoken estimator),
                         # which counts ~25% higher than the proxy-side
