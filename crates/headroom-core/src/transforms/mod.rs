@@ -57,10 +57,10 @@ pub use pipeline::{
 };
 pub use recommendations::{Recommendation, RecommendationStore, RECOMMENDATIONS_PATH_ENV_VAR};
 pub use safety::{tool_pair_indices, ToolPair};
-pub use text_crusher::{TextCrusher, TextCrusherConfig, TextCrusherResult};
 pub use search_compressor::{
     FileMatches, SearchCompressionResult, SearchCompressor, SearchCompressorConfig,
     SearchCompressorStats, SearchMatch,
 };
 pub use tag_protector::{is_known_html_tag, protect_tags, restore_tags, ProtectStats};
+pub use text_crusher::{TextCrusher, TextCrusherConfig, TextCrusherResult};
 pub use unidiff_detector::{detect_diff, is_diff};

@@ -17,7 +17,15 @@ use super::config::TextCrusherConfig;
 use crate::relevance::{BM25Scorer, RelevanceScorer};
 
 const KEYWORDS: [&str; 10] = [
-    "error", "exception", "failed", "failure", "fail", "warning", "traceback", "assert", "todo",
+    "error",
+    "exception",
+    "failed",
+    "failure",
+    "fail",
+    "warning",
+    "traceback",
+    "assert",
+    "todo",
     "fixme",
 ];
 
@@ -257,8 +265,12 @@ fn is_salient(word: &str) -> bool {
         let b = &word[dot + 1..];
         if !a.is_empty()
             && !b.is_empty()
-            && a.chars().next().is_some_and(|c| c.is_alphabetic() || c == '_')
-            && b.chars().next().is_some_and(|c| c.is_alphabetic() || c == '_')
+            && a.chars()
+                .next()
+                .is_some_and(|c| c.is_alphabetic() || c == '_')
+            && b.chars()
+                .next()
+                .is_some_and(|c| c.is_alphabetic() || c == '_')
         {
             return true;
         }

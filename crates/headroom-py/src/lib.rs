@@ -23,10 +23,6 @@ use headroom_core::transforms::smart_crusher::{
     CrushResult as RustCrushResult, SmartCrusher as RustSmartCrusher,
     SmartCrusherConfig as RustSmartCrusherConfig,
 };
-use headroom_core::transforms::{
-    TextCrusher as RustTextCrusher, TextCrusherConfig as RustTextCrusherConfig,
-    TextCrusherResult as RustTextCrusherResult,
-};
 use headroom_core::transforms::tag_protector::{
     is_known_html_tag as rust_is_known_html_tag, known_html_tag_names as rust_known_html_tag_names,
     protect_tags as rust_protect_tags, restore_tags as rust_restore_tags,
@@ -43,6 +39,10 @@ use headroom_core::transforms::{
     LogFormat as RustLogFormat, LogLevel as RustLogLevel,
     SearchCompressionResult as RustSearchResult, SearchCompressor as RustSearchCompressor,
     SearchCompressorConfig as RustSearchConfig, SearchCompressorStats as RustSearchStats,
+};
+use headroom_core::transforms::{
+    TextCrusher as RustTextCrusher, TextCrusherConfig as RustTextCrusherConfig,
+    TextCrusherResult as RustTextCrusherResult,
 };
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
