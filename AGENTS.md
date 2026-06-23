@@ -1,43 +1,42 @@
-# headroom
+<!-- headroom:rtk-instructions -->
+# RTK (Rust Token Killer) - Token-Optimized Commands
 
-Headroom — 开源 agent 工程平台。Rust + Python 混合项目，提供 agent 编排、内存管理、插件系统。
+When running shell commands, **always prefix with `rtk`**. This reduces context
+usage by 60-90% with zero behavior change. If rtk has no filter for a command,
+it passes through unchanged — so it is always safe to use.
 
-## 技术栈
+## Key Commands
+```bash
+# Git (59-80% savings)
+rtk git status          rtk git diff            rtk git log
 
-- Rust (Cargo.toml, crates/)
-- Python (pyproject.toml, uv)
-- Docker (Dockerfile, docker-compose.yml)
-- MkDocs (mkdocs.yml)
+# Files & Search (60-75% savings)
+rtk ls <path>           rtk read <file>         rtk grep <pattern>
+rtk find <pattern>      rtk diff <file>
 
-## 目录结构
+# Test (90-99% savings) — shows failures only
+rtk pytest tests/       rtk cargo test          rtk test <cmd>
 
-| 目录 | 用途 |
-|------|------|
-| `crates/` | Rust crate 源码 |
-| `headroom/` | Python 包 |
-| `sdk/` | SDK |
-| `plugins/` | 插件 |
-| `benchmarks/` | 性能基准测试 |
-| `e2e/` | 端到端测试 |
-| `tests/` | 测试 |
-| `examples/` | 示例 |
-| `docs/` | 文档 |
-| `wiki/` | Wiki |
-| `scripts/` | 脚本 |
-| `sql/` | SQL 文件 |
-| `docker/` | Docker 配置 |
+# Build & Lint (80-90% savings) — shows errors only
+rtk tsc                 rtk lint                rtk cargo build
+rtk prettier --check    rtk mypy                rtk ruff check
 
-## 关键文件
+# Analysis (70-90% savings)
+rtk err <cmd>           rtk log <file>          rtk json <file>
+rtk summary <cmd>       rtk deps                rtk env
 
-- `README.md` — 项目说明
-- `CONTRIBUTING.md` — 贡献指南
-- `CHANGELOG.md` — 变更日志
-- `Makefile` — 构建命令
-- `llms.txt` — LLM 友好说明
+# GitHub (26-87% savings)
+rtk gh pr view <n>      rtk gh run list         rtk gh issue list
 
-## 清理提示
+# Infrastructure (85% savings)
+rtk docker ps           rtk kubectl get         rtk docker logs <c>
 
-- `target/` (Rust 构建缓存) 可清理，体积大
-- `.venv/` 可清理
-- `.mypy_cache/`, `.pytest_cache/`, `.ruff_cache/` 可清理
-- `headroom_memory.db`, `headroom_memory_vectors.db` 是运行时数据库
+# Package managers (70-90% savings)
+rtk pip list            rtk pnpm install        rtk npm run <script>
+```
+
+## Rules
+- In command chains, prefix each segment: `rtk git add . && rtk git commit -m "msg"`
+- For debugging, use raw command without rtk prefix
+- `rtk proxy <cmd>` runs command without filtering but tracks usage
+<!-- /headroom:rtk-instructions -->
