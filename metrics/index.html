@@ -2640,6 +2640,16 @@ proxy compression history stored by default at
 Use <code>HEADROOM_SAVINGS_PATH</code> to override the file location directly, or
 set <code>HEADROOM_WORKSPACE_DIR</code> to relocate the entire state root. See the
 <a href="../filesystem-contract/">Filesystem Contract</a> for details.</p>
+<blockquote>
+<p><strong><code>compression_savings_usd</code> needs LiteLLM (Python 3.13).</strong> Dollar figures are
+priced entirely from LiteLLM's cost tables, and LiteLLM can't be installed on
+Python 3.14+. On 3.14 the token counts are unaffected but every USD field
+(and the dashboard's <em>Proxy $ Saved</em> tile) reads <code>0</code>. <code>/stats</code> exposes a
+top-level <code>"litellm_available"</code> boolean so clients can tell "genuinely $0"
+apart from "pricing unavailable"; the dashboard uses it to prompt a reinstall
+on 3.13 (<code>pipx reinstall headroom-ai --python python3.13</code>) rather than showing
+a misleading <code>$0.00</code>.</p>
+</blockquote>
 <p>For Anthropic-style providers that return cache-write TTL buckets, <code>/stats</code>
 also surfaces observed cache TTL usage under <code>prefix_cache</code>:</p>
 <div class="language-json highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="p">{</span>
@@ -2834,7 +2844,7 @@ totals.</p>
 <h3 id="anonymous-telemetry-vs-otel">Anonymous Telemetry vs OTEL<a class="headerlink" href="#anonymous-telemetry-vs-otel" title="Permanent link">&para;</a></h3>
 <p>Headroom has two separate systems:</p>
 <ul>
-<li><code>HEADROOM_TELEMETRY</code> / <code>--no-telemetry</code> controls the privacy-preserving anonymous data-flywheel beacon and TOIN-related aggregate reporting.</li>
+<li><code>HEADROOM_TELEMETRY</code> / <code>--telemetry</code> / <code>--no-telemetry</code> controls the privacy-preserving anonymous data-flywheel beacon and TOIN-related aggregate reporting. It is <strong>off by default</strong> (opt-in): set <code>HEADROOM_TELEMETRY=on</code> or pass <code>--telemetry</code> to enable it.</li>
 <li><code>HEADROOM_OTEL_*</code> controls operational OTEL metric export.</li>
 </ul>
 <p>They are independent by design so you can disable the anonymous beacon while keeping OTEL metrics enabled, or vice versa.</p>
@@ -2950,8 +2960,8 @@ falls back to <code>"unknown"</code> and never breaks the proxy.</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="c1"># Log to file</span>
 </span><span id="__span-20-2"><a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>headroom<span class="w"> </span>proxy<span class="w"> </span>--log-file<span class="w"> </span>headroom.jsonl
 </span><span id="__span-20-3"><a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a>
-</span><span id="__span-20-4"><a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="c1"># Increase verbosity</span>
-</span><span id="__span-20-5"><a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a>headroom<span class="w"> </span>proxy<span class="w"> </span>--log-level<span class="w"> </span>debug
+</span><span id="__span-20-4"><a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="c1"># Enable request logging</span>
+</span><span id="__span-20-5"><a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a>headroom<span class="w"> </span>proxy<span class="w"> </span>--log-messages
 </span></code></pre></div>
 <h2 id="grafana-dashboard">Grafana Dashboard<a class="headerlink" href="#grafana-dashboard" title="Permanent link">&para;</a></h2>
 <p>Example Grafana dashboard configuration for Prometheus metrics:</p>

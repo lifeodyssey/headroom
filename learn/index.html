@@ -1191,6 +1191,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#verbosity-learning-verbosity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verbosity learning (--verbosity)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#supported-agents" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2428,6 +2439,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#verbosity-learning-verbosity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verbosity learning (--verbosity)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#supported-agents" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2508,14 +2530,17 @@
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># See recommendations for current project (dry-run, no changes)</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>headroom<span class="w"> </span>learn
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Write recommendations to CLAUDE.md and MEMORY.md</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Write recommendations to CLAUDE.local.md (gitignored, personal default)</span>
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>headroom<span class="w"> </span>learn<span class="w"> </span>--apply
 </span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># Analyze a specific project</span>
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>headroom<span class="w"> </span>learn<span class="w"> </span>--project<span class="w"> </span>~/my-project<span class="w"> </span>--apply
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># Write to the shared team file instead</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>headroom<span class="w"> </span>learn<span class="w"> </span>--apply<span class="w"> </span>--target<span class="w"> </span>CLAUDE.md
 </span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>
-</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="c1"># Analyze all projects</span>
-</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>headroom<span class="w"> </span>learn<span class="w"> </span>--all<span class="w"> </span>--apply
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="c1"># Analyze a specific project</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>headroom<span class="w"> </span>learn<span class="w"> </span>--project<span class="w"> </span>~/my-project<span class="w"> </span>--apply
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="c1"># Analyze all projects</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>headroom<span class="w"> </span>learn<span class="w"> </span>--all<span class="w"> </span>--apply
 </span></code></pre></div>
 <h2 id="how-it-works">How It Works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h2>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>Past Sessions → Plugin → Analyzer → Writer → Agent-native context file
@@ -2584,7 +2609,7 @@
 <tbody>
 <tr>
 <td>Environment, paths, commands</td>
-<td><strong>CLAUDE.md</strong></td>
+<td><strong>CLAUDE.local.md</strong> (default) or <code>CLAUDE.md</code> (with <code>--target CLAUDE.md</code>)</td>
 <td><strong>AGENTS.md</strong></td>
 <td><strong>GEMINI.md</strong></td>
 </tr>
@@ -2596,7 +2621,7 @@
 </tr>
 </tbody>
 </table>
-<p>Output files are agent-native: Claude Code uses CLAUDE.md/MEMORY.md, Codex uses AGENTS.md, Gemini uses GEMINI.md. The same learnings, written to the format each agent reads.</p>
+<p>Output files are agent-native: Claude Code writes to <code>CLAUDE.local.md</code> by default (gitignored, personal); pass <code>--target CLAUDE.md</code> for the shared team file. Codex uses <code>AGENTS.md</code>, Gemini uses <code>GEMINI.md</code>. The same learnings, written to the format each agent reads.</p>
 <h2 id="marker-based-updates">Marker-Based Updates<a class="headerlink" href="#marker-based-updates" title="Permanent link">&para;</a></h2>
 <p>Headroom manages a clearly-delimited section in each file:</p>
 <div class="language-markdown highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>&lt;!-- headroom:learn:start --&gt;
@@ -2629,12 +2654,27 @@
 </span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
 </span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>Options:
 </span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>  --project PATH               Project directory (default: current directory)
-</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>  --all                        Analyze all discovered projects
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>  --all                        Analyze all discovered projects (mutually exclusive with --project)
 </span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>  --apply                      Write recommendations (default: dry-run)
-</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>  --agent [auto|claude|codex|gemini]
-</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>                               Which agent to analyze (default: auto-detect)
-</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>  --model TEXT                 LLM for analysis (default: auto from API keys or CLI)
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>  --target TEXT                Context file to write (default: CLAUDE.local.md for Claude Code)
+</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>  --main-only                  Write only to the main context file, skip MEMORY.md
+</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>  --agent [auto|claude|codex|gemini]
+</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a>                               Which agent to analyze (default: auto-detect)
+</span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>  --model TEXT                 LLM for analysis (default: auto from API keys or CLI)
+</span><span id="__span-9-12"><a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a>  --workers / -j INTEGER       Parallel analysis workers (min 1, default: auto)
+</span><span id="__span-9-13"><a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a>  --verbosity                  Analyze verbosity level instead of failure patterns
+</span><span id="__span-9-14"><a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a>  --llm-judge                  Use an LLM to score verbosity quality (requires --verbosity)
 </span></code></pre></div>
+<h3 id="verbosity-learning-verbosity">Verbosity learning (<code>--verbosity</code>)<a class="headerlink" href="#verbosity-learning-verbosity" title="Permanent link">&para;</a></h3>
+<p><code>headroom learn --verbosity</code> analyzes past sessions to infer the ideal output verbosity level for your project and writes a <code>verbosity.json</code> profile.</p>
+<p><strong>Important</strong>: the output shaper is <strong>off by default</strong>. Running <code>--verbosity --apply</code> will either:
+- Hot-enable the output shaper on a running proxy (<code>POST /admin/runtime-env</code>), OR
+- Print instructions to set <code>HEADROOM_OUTPUT_SHAPER=1</code> before <code>headroom wrap ...</code></p>
+<p>To keep the shaper on across proxy restarts, add <code>export HEADROOM_OUTPUT_SHAPER=1</code> to your shell profile before starting the proxy.</p>
+<p><strong>Flag interactions</strong>:
+- <code>--all</code> and <code>--project</code> are mutually exclusive
+- <code>--llm-judge</code> requires <code>--verbosity</code>
+- <code>--verbosity --all --apply</code> is rejected (verbosity persists a single global level)</p>
 <h3 id="supported-agents">Supported Agents<a class="headerlink" href="#supported-agents" title="Permanent link">&para;</a></h3>
 <table>
 <thead>

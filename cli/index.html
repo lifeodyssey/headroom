@@ -3494,6 +3494,11 @@
 <td>Maximum upstream retry attempts</td>
 </tr>
 <tr>
+<td><code>--request-timeout-seconds</code></td>
+<td>runtime default <code>300</code></td>
+<td>Request timeout in seconds</td>
+</tr>
+<tr>
 <td><code>--connect-timeout-seconds</code></td>
 <td>runtime default <code>10</code></td>
 <td>Upstream connection timeout</td>
@@ -3539,19 +3544,19 @@
 <td>Disable stale/superseded read compression</td>
 </tr>
 <tr>
-<td><code>--no-intelligent-context</code></td>
+<td><code>--no-ccr-inject-tool</code></td>
 <td>off</td>
-<td>Disable intelligent context manager</td>
+<td>Disable injecting the <code>headroom_retrieve</code> tool</td>
 </tr>
 <tr>
-<td><code>--no-intelligent-scoring</code></td>
+<td><code>--no-ccr-marker</code></td>
 <td>off</td>
-<td>Disable multi-factor importance scoring</td>
+<td>Disable adding retrieval markers to compressed output</td>
 </tr>
 <tr>
-<td><code>--no-compress-first</code></td>
+<td><code>--no-ccr-proactive-expansion</code></td>
 <td>off</td>
-<td>Disable deep compression before dropping messages</td>
+<td>Disable proactive CCR context expansion</td>
 </tr>
 <tr>
 <td><code>--memory</code></td>
@@ -3629,16 +3634,21 @@
 <td>AWS profile name for Bedrock</td>
 </tr>
 <tr>
+<td><code>--telemetry</code></td>
+<td>off</td>
+<td>Opt in to anonymous usage telemetry (off by default)</td>
+</tr>
+<tr>
 <td><code>--no-telemetry</code></td>
 <td>off</td>
-<td>Disable anonymous usage telemetry</td>
+<td>Force anonymous usage telemetry off (already the default)</td>
 </tr>
 </tbody>
 </table>
 <p>Notes:</p>
 <ul>
 <li><code>--learn</code> implies memory unless <code>--no-learn</code> is also set.</li>
-<li>Proxy startup can also read environment variables such as <code>HEADROOM_HOST</code>, <code>HEADROOM_PORT</code>, <code>HEADROOM_BUDGET</code>, <code>HEADROOM_MODE</code>, <code>HEADROOM_ANYLLM_PROVIDER</code>, <code>HEADROOM_ANTHROPIC_PRE_UPSTREAM_CONCURRENCY</code>, <code>HEADROOM_ANTHROPIC_PRE_UPSTREAM_ACQUIRE_TIMEOUT_SECONDS</code>, <code>HEADROOM_ANTHROPIC_PRE_UPSTREAM_MEMORY_CONTEXT_TIMEOUT_SECONDS</code>, <code>ANTHROPIC_TARGET_API_URL</code>, <code>OPENAI_TARGET_API_URL</code>, and <code>GEMINI_TARGET_API_URL</code>. CLI flags take precedence over environment variables.</li>
+<li>Proxy startup can also read environment variables such as <code>HEADROOM_HOST</code>, <code>HEADROOM_PORT</code>, <code>HEADROOM_BUDGET</code>, <code>HEADROOM_MODE</code>, <code>HEADROOM_ANYLLM_PROVIDER</code>, <code>HEADROOM_ANTHROPIC_PRE_UPSTREAM_CONCURRENCY</code>, <code>HEADROOM_ANTHROPIC_PRE_UPSTREAM_ACQUIRE_TIMEOUT_SECONDS</code>, <code>HEADROOM_REQUEST_TIMEOUT</code>, <code>HEADROOM_ANTHROPIC_PRE_UPSTREAM_MEMORY_CONTEXT_TIMEOUT_SECONDS</code>, <code>ANTHROPIC_TARGET_API_URL</code>, <code>OPENAI_TARGET_API_URL</code>, and <code>GEMINI_TARGET_API_URL</code>. CLI flags take precedence over environment variables.</li>
 <li>The default Anthropic pre-upstream cap is intentionally conservative for CPU/ONNX-heavy work. Larger containers may want to raise it after checking the resolved runtime values on <code>/readyz</code> or <code>/debug/warmup</code>.</li>
 </ul>
 <p>See also: <a href="../proxy/">Proxy Server</a>, <a href="../configuration/">Configuration</a></p>
@@ -3919,7 +3929,7 @@ to <code>~/.headroom/logs/proxy.log</code> — see the
 <tbody>
 <tr>
 <td><code>--db-path</code></td>
-<td><code>headroom_memory.db</code></td>
+<td><code>./.headroom/memory.db</code> if present, else <code>~/.headroom/memory.db</code></td>
 <td>Memory database path</td>
 </tr>
 <tr>
@@ -3969,7 +3979,7 @@ to <code>~/.headroom/logs/proxy.log</code> — see the
 </tr>
 <tr>
 <td><code>--db-path</code></td>
-<td><code>headroom_memory.db</code></td>
+<td><code>./.headroom/memory.db</code> if present, else <code>~/.headroom/memory.db</code></td>
 <td>Memory database path</td>
 </tr>
 <tr>
@@ -3993,7 +4003,7 @@ to <code>~/.headroom/logs/proxy.log</code> — see the
 <tbody>
 <tr>
 <td><code>--db-path</code></td>
-<td><code>headroom_memory.db</code></td>
+<td><code>./.headroom/memory.db</code> if present, else <code>~/.headroom/memory.db</code></td>
 <td>Memory database path</td>
 </tr>
 </tbody>
@@ -4018,7 +4028,7 @@ to <code>~/.headroom/logs/proxy.log</code> — see the
 </tr>
 <tr>
 <td><code>--db-path</code></td>
-<td><code>headroom_memory.db</code></td>
+<td><code>./.headroom/memory.db</code> if present, else <code>~/.headroom/memory.db</code></td>
 <td>Memory database path</td>
 </tr>
 <tr>
@@ -4054,7 +4064,7 @@ to <code>~/.headroom/logs/proxy.log</code> — see the
 </tr>
 <tr>
 <td><code>--db-path</code></td>
-<td><code>headroom_memory.db</code></td>
+<td><code>./.headroom/memory.db</code> if present, else <code>~/.headroom/memory.db</code></td>
 <td>Memory database path</td>
 </tr>
 <tr>
@@ -4079,7 +4089,7 @@ to <code>~/.headroom/logs/proxy.log</code> — see the
 <tbody>
 <tr>
 <td><code>--db-path</code></td>
-<td><code>headroom_memory.db</code></td>
+<td><code>./.headroom/memory.db</code> if present, else <code>~/.headroom/memory.db</code></td>
 <td>Memory database path</td>
 </tr>
 <tr>
@@ -4129,7 +4139,7 @@ to <code>~/.headroom/logs/proxy.log</code> — see the
 <tbody>
 <tr>
 <td><code>--db-path</code></td>
-<td><code>headroom_memory.db</code></td>
+<td><code>./.headroom/memory.db</code> if present, else <code>~/.headroom/memory.db</code></td>
 <td>Memory database path</td>
 </tr>
 <tr>
@@ -4154,7 +4164,7 @@ to <code>~/.headroom/logs/proxy.log</code> — see the
 <tbody>
 <tr>
 <td><code>--db-path</code></td>
-<td><code>headroom_memory.db</code></td>
+<td><code>./.headroom/memory.db</code> if present, else <code>~/.headroom/memory.db</code></td>
 <td>Memory database path</td>
 </tr>
 <tr>
@@ -4184,7 +4194,7 @@ to <code>~/.headroom/logs/proxy.log</code> — see the
 </tr>
 <tr>
 <td><code>--db-path</code></td>
-<td><code>headroom_memory.db</code></td>
+<td><code>./.headroom/memory.db</code> if present, else <code>~/.headroom/memory.db</code></td>
 <td>Memory database path</td>
 </tr>
 <tr>
@@ -4292,11 +4302,14 @@ to <code>~/.headroom/logs/proxy.log</code> — see the
 </span><span id="__span-28-25"><a id="__codelineno-28-25" name="__codelineno-28-25" href="#__codelineno-28-25"></a>                                  backends.
 </span><span id="__span-28-26"><a id="__codelineno-28-26" name="__codelineno-28-26" href="#__codelineno-28-26"></a>  --mode TEXT                     Proxy optimization mode.  [default: token]
 </span><span id="__span-28-27"><a id="__codelineno-28-27" name="__codelineno-28-27" href="#__codelineno-28-27"></a>  --memory                        Enable persistent memory in the proxy runtime.
-</span><span id="__span-28-28"><a id="__codelineno-28-28" name="__codelineno-28-28" href="#__codelineno-28-28"></a>  --no-telemetry                  Disable anonymous telemetry in the runtime.
-</span><span id="__span-28-29"><a id="__codelineno-28-29" name="__codelineno-28-29" href="#__codelineno-28-29"></a>  --image TEXT                    Docker image to use when runtime=docker or
-</span><span id="__span-28-30"><a id="__codelineno-28-30" name="__codelineno-28-30" href="#__codelineno-28-30"></a>                                  preset=persistent-docker.  [default:
-</span><span id="__span-28-31"><a id="__codelineno-28-31" name="__codelineno-28-31" href="#__codelineno-28-31"></a>                                  ghcr.io/chopratejas/headroom:latest]
-</span><span id="__span-28-32"><a id="__codelineno-28-32" name="__codelineno-28-32" href="#__codelineno-28-32"></a>  -?, --help                      Show this message and exit.
+</span><span id="__span-28-28"><a id="__codelineno-28-28" name="__codelineno-28-28" href="#__codelineno-28-28"></a>  --telemetry                     Opt in to anonymous telemetry in the runtime
+</span><span id="__span-28-29"><a id="__codelineno-28-29" name="__codelineno-28-29" href="#__codelineno-28-29"></a>                                  (off by default).
+</span><span id="__span-28-30"><a id="__codelineno-28-30" name="__codelineno-28-30" href="#__codelineno-28-30"></a>  --no-telemetry                  Force anonymous telemetry off in the runtime
+</span><span id="__span-28-31"><a id="__codelineno-28-31" name="__codelineno-28-31" href="#__codelineno-28-31"></a>                                  (already the default).
+</span><span id="__span-28-32"><a id="__codelineno-28-32" name="__codelineno-28-32" href="#__codelineno-28-32"></a>  --image TEXT                    Docker image to use when runtime=docker or
+</span><span id="__span-28-33"><a id="__codelineno-28-33" name="__codelineno-28-33" href="#__codelineno-28-33"></a>                                  preset=persistent-docker.  [default:
+</span><span id="__span-28-34"><a id="__codelineno-28-34" name="__codelineno-28-34" href="#__codelineno-28-34"></a>                                  ghcr.io/chopratejas/headroom:latest]
+</span><span id="__span-28-35"><a id="__codelineno-28-35" name="__codelineno-28-35" href="#__codelineno-28-35"></a>  -?, --help                      Show this message and exit.
 </span></code></pre></div>
 <h3 id="headroom-install-apply"><code>headroom install apply</code><a class="headerlink" href="#headroom-install-apply" title="Permanent link">&para;</a></h3>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-29-1"><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a>headroom<span class="w"> </span>install<span class="w"> </span>apply<span class="w"> </span>--preset<span class="w"> </span>persistent-service<span class="w"> </span>--providers<span class="w"> </span>auto
@@ -4373,9 +4386,14 @@ to <code>~/.headroom/logs/proxy.log</code> — see the
 <td>Enable persistent memory in the managed runtime</td>
 </tr>
 <tr>
+<td><code>--telemetry</code></td>
+<td>off</td>
+<td>Opt in to anonymous telemetry (off by default)</td>
+</tr>
+<tr>
 <td><code>--no-telemetry</code></td>
 <td>off</td>
-<td>Disable anonymous telemetry</td>
+<td>Force anonymous telemetry off (already the default)</td>
 </tr>
 <tr>
 <td><code>--image</code></td>

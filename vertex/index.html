@@ -1159,6 +1159,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#claude-code-with-headroom-compression-validated" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Claude Code with Headroom compression (validated)
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2048,6 +2059,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#claude-code-with-headroom-compression-validated" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Claude Code with Headroom compression (validated)
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2122,6 +2144,22 @@ attached service accounts in that order. See:</p>
 <p>The Python proxy preserves caller-supplied Google bearer auth. The native Rust
 proxy path additionally resolves GCP ADC and injects the bearer token for the
 Anthropic publisher route.</p>
+<h2 id="claude-code-with-headroom-compression-validated">Claude Code with Headroom compression (validated)<a class="headerlink" href="#claude-code-with-headroom-compression-validated" title="Permanent link">&para;</a></h2>
+<p>To run <strong>Claude Code</strong> against Claude-on-Vertex <strong>with Headroom compressing the
+context</strong>, use the dedicated, tested runbook:</p>
+<p>➡️ <strong><a href="https://headroom-docs.vercel.app/docs/claude-code-vertex">Claude Code + Vertex + Headroom</a></strong></p>
+<p>Short version: run Claude Code in <strong>normal Anthropic mode</strong> (<code>ANTHROPIC_BASE_URL</code>
+→ the proxy) and start the proxy with <code>--backend litellm-vertex_ai --region &lt;loc&gt;
+--code-aware</code>; Headroom holds the GCP ADC creds and calls Vertex.</p>
+<blockquote>
+<p>⚠️ Do <strong>not</strong> put Claude Code into Vertex mode and point <code>ANTHROPIC_VERTEX_BASE_URL</code>
+at the proxy. Claude Code's client-side model probe rejects any non-Google Vertex
+URL before sending a request ("model … not available on your vertex deployment"),
+so the proxy is never reached. Use the Anthropic-mode runbook above instead.</p>
+<p>⚠️ Two easy-to-miss requirements: <code>pip install "google-cloud-aiplatform&gt;=1.38"</code>
+(LiteLLM <code>vertex_ai</code> provider) and the <code>--code-aware</code> flag (code compression is
+off by default). Without them you get a 500 or <code>tokens_saved: 0</code>.</p>
+</blockquote>
 
 
 
