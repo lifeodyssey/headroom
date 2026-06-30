@@ -2401,7 +2401,7 @@
 <li><strong>Analysis intent protection</strong> (<code>protect_analysis_context=True</code>): If the most recent user message contains keywords like "analyze", "review", "explain", "fix", "debug", "optimize", "error", "bug" — ALL code in the conversation is protected</li>
 </ol>
 <p><strong>Why this is the right default</strong>: Code is almost always fetched because the user wants to work with it. Compressing function bodies would remove exactly what they need. LLMs like Claude are excellent at navigating large code files without compression.</p>
-<p><strong>Where code savings come from</strong>: The IntelligentContextManager drops old code messages that are no longer relevant (scoring-based), which is a better strategy than stripping function bodies from active code.</p>
+<p><strong>Where code savings come from</strong>: Headroom does not strip function bodies from active code or drop old code messages. Code savings come from compressing the newest content blocks (live-zone-only compression) when they are not protected, leaving the conversation history intact.</p>
 <p><strong>Override</strong>: Set <code>protect_analysis_context=False</code> in <code>ContentRouterConfig</code> for aggressive code compression. Requires <code>headroom-ai[code]</code> for tree-sitter.</p>
 <h2 id="json-compression-constraints">JSON Compression Constraints<a class="headerlink" href="#json-compression-constraints" title="Permanent link">&para;</a></h2>
 <h3 id="what-gets-compressed">What gets compressed<a class="headerlink" href="#what-gets-compressed" title="Permanent link">&para;</a></h3>
@@ -2485,7 +2485,7 @@
 <h2 id="performance-characteristics">Performance Characteristics<a class="headerlink" href="#performance-characteristics" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>ContentRouter</strong> accounts for 91-98% of pipeline cost — it does the actual compression work</li>
-<li><strong>CacheAligner</strong> and <strong>RollingWindow</strong> are sub-millisecond</li>
+<li><strong>CacheAligner</strong> is sub-millisecond</li>
 <li>Scaling is roughly <strong>linear</strong> with input size</li>
 <li>Full benchmark data: <a href="../LATENCY_BENCHMARKS/">LATENCY_BENCHMARKS.md</a></li>
 </ul>

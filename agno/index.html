@@ -3108,7 +3108,7 @@
 <h3 id="best-practices-for-maximum-savings">Best Practices for Maximum Savings<a class="headerlink" href="#best-practices-for-maximum-savings" title="Permanent link">&para;</a></h3>
 <ol>
 <li><strong>Tool-heavy agents see the biggest wins</strong> — Tool results (JSON, logs, search results) compress 70-90%</li>
-<li><strong>Long conversations benefit from RollingWindow</strong> — Configure context limits to avoid hitting provider maximums</li>
+<li><strong>Long conversations are handled automatically</strong> — Headroom compresses the newest tool outputs and content blocks in place (live-zone-only compression) and never drops messages from history, so the cache hot zone stays intact. No context-limit configuration is required.</li>
 <li><strong>Wrap at the model level, not agent level</strong> — This ensures all LLM calls go through optimization</li>
 <li><strong>Use hooks for observability</strong> — Track token usage patterns to identify optimization opportunities</li>
 </ol>

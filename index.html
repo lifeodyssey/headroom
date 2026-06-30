@@ -2739,22 +2739,21 @@
 <p><a class="md-button" href="integration-guide/">All integration patterns &rarr;</a></p>
 <hr />
 <h2 id="how-it-works">How It Works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h2>
-<p>Headroom runs a three-stage pipeline on every request:</p>
+<p>Headroom runs a two-stage pipeline on every request:</p>
 <pre class="mermaid"><code>graph LR
     A[Your Prompt] --&gt; B[CacheAligner]
     B --&gt; C[ContentRouter]
-    C --&gt; D[IntelligentContext]
-    D --&gt; E[LLM Provider]
+    C --&gt; E[LLM Provider]
 
     C --&gt;|JSON| F[SmartCrusher]
     C --&gt;|Code| G[CodeCompressor]
     C --&gt;|Text| H[Kompress]
     C --&gt;|Logs| I[LogCompressor]
 
-    F --&gt; D
-    G --&gt; D
-    H --&gt; D
-    I --&gt; D</code></pre>
+    F --&gt; E
+    G --&gt; E
+    H --&gt; E
+    I --&gt; E</code></pre>
 <p><strong>Stage 1: CacheAligner</strong> — Stabilizes message prefixes so the provider's KV cache actually hits. Claude offers a 90% read discount on cached prefixes; CacheAligner makes that work.</p>
 <p><strong>Stage 2: ContentRouter</strong> — Auto-detects content type (JSON, code, logs, search results, diffs, HTML, plain text) and routes each to the optimal compressor:</p>
 <table>
@@ -2803,7 +2802,7 @@
 </tr>
 </tbody>
 </table>
-<p><strong>Stage 3: IntelligentContext</strong> — If the conversation still exceeds the model's context limit, scores each message by importance (recency, references, density) and drops the lowest-value ones.</p>
+<p>Context management is handled automatically inside the pipeline (live-zone-only compression): Headroom compresses only the newest content blocks (the latest user message and tool results) and never drops messages from history. The system prompt, tool definitions, and older turns — the provider cache hot zone — are left untouched so prompt caching keeps working.</p>
 <p><strong>Nothing is lost.</strong> Compressed content goes into the CCR store (Compress-Cache-Retrieve). The LLM gets a <code>headroom_retrieve</code> tool and can fetch full originals when it needs more detail.</p>
 <p><a href="ARCHITECTURE/">Full architecture deep dive &rarr;</a></p>
 <hr />
