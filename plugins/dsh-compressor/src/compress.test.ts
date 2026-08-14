@@ -47,6 +47,19 @@ const RETRIEVE_HINT =
   "Call compressor_retrieve with this locator or its hash to restore the original. This is not a filesystem path.";
 const STUB_CRUSHED = `${LONG_LOCATOR}\n${RETRIEVE_HINT}`;
 
+const PROTECTED_TAIL: ConversationMessage[] = [
+  { role: "assistant", content: "tail-1" },
+  { role: "assistant", content: "tail-2" },
+  { role: "assistant", content: "tail-3" },
+  { role: "assistant", content: "tail-4" },
+];
+
+function withProtectedTail(
+  messages: ConversationMessage[],
+): ConversationMessage[] {
+  return [...messages, ...PROTECTED_TAIL];
+}
+
 describe("compressConversation", () => {
   it("leaves every message unchanged", () => {
     const messages = [
@@ -76,9 +89,9 @@ describe("compressConversation", () => {
 
   it("writes one disk object and rewrites a long message to a locator plus retrieve hint", () => {
     const storeDir = tempStore();
-    const messages = [
+    const messages = withProtectedTail([
       { role: "tool" as const, content: LONG_ORIGINAL, toolName: "bash" },
-    ];
+    ]);
 
     const compressed = compressConversation(messages, { storeDir });
 
@@ -89,6 +102,7 @@ describe("compressConversation", () => {
         compressed: true,
         content: STUB_CRUSHED,
       },
+      ...PROTECTED_TAIL,
     ]);
     expect(readdirSync(storeDir)).toEqual([LONG_HASH]);
     expect(readFileSync(join(storeDir, LONG_HASH), "utf8")).toBe(LONG_ORIGINAL);
@@ -97,7 +111,9 @@ describe("compressConversation", () => {
   it("retrieves the original from the full locator", () => {
     const storeDir = tempStore();
     compressConversation(
-      [{ role: "tool", content: LONG_ORIGINAL, toolName: "bash" }],
+      withProtectedTail([
+        { role: "tool", content: LONG_ORIGINAL, toolName: "bash" },
+      ]),
       { storeDir },
     );
 
@@ -107,7 +123,9 @@ describe("compressConversation", () => {
   it("retrieves the original from the bare content hash", () => {
     const storeDir = tempStore();
     compressConversation(
-      [{ role: "tool", content: LONG_ORIGINAL, toolName: "bash" }],
+      withProtectedTail([
+        { role: "tool", content: LONG_ORIGINAL, toolName: "bash" },
+      ]),
       { storeDir },
     );
 
@@ -151,7 +169,9 @@ describe("compressConversation", () => {
   it("uses a locator that is obviously not a filesystem path", () => {
     const storeDir = tempStore();
     const [compressed] = compressConversation(
-      [{ role: "tool", content: LONG_ORIGINAL, toolName: "bash" }],
+      withProtectedTail([
+        { role: "tool", content: LONG_ORIGINAL, toolName: "bash" },
+      ]),
       { storeDir },
     );
 
@@ -167,9 +187,11 @@ describe("compressConversation", () => {
     const previous = process.env.DSH_HOME;
     process.env.DSH_HOME = home;
     try {
-      const compressed = compressConversation([
-        { role: "tool", content: LONG_ORIGINAL, toolName: "bash" },
-      ]);
+      const compressed = compressConversation(
+        withProtectedTail([
+          { role: "tool", content: LONG_ORIGINAL, toolName: "bash" },
+        ]),
+      );
 
       expect(compressed[0]?.content).toBe(STUB_CRUSHED);
       expect(readFileSync(join(home, "dsh-compressor", LONG_HASH), "utf8")).toBe(
@@ -185,19 +207,146 @@ describe("compressConversation", () => {
     }
   });
 
+  it("never compresses user messages", () => {
+    const storeDir = tempStore();
+    const messages = withProtectedTail([
+      { role: "user", content: LONG_ORIGINAL },
+    ]);
+
+    expect(compressConversation(messages, { storeDir })).toEqual(messages);
+    expect(readdirSync(storeDir)).toEqual([]);
+  });
+
   it("writes one disk object per content hash", () => {
     const storeDir = tempStore();
-    const messages = [
+    const messages = withProtectedTail([
       { role: "tool" as const, content: LONG_ORIGINAL, toolName: "bash" },
       { role: "assistant" as const, content: LONG_ORIGINAL },
-    ];
+    ]);
 
     const compressed = compressConversation(messages, { storeDir });
 
     expect(compressed.map((message) => message.content)).toEqual([
       STUB_CRUSHED,
       STUB_CRUSHED,
+      ...PROTECTED_TAIL.map((message) => message.content),
     ]);
     expect(readdirSync(storeDir)).toEqual([LONG_HASH]);
+  });
+
+  it("leaves messages under about 250 tokens as-is", () => {
+    const storeDir = tempStore();
+    const shortOriginal = "ok ".repeat(200);
+    const messages = withProtectedTail([
+      { role: "tool" as const, content: shortOriginal, toolName: "bash" },
+    ]);
+
+    expect(compressConversation(messages, { storeDir })).toEqual(messages);
+    expect(readdirSync(storeDir)).toEqual([]);
+  });
+
+  it("compresses an eligible message of about 250 tokens", () => {
+    const storeDir = tempStore();
+    const aroundMinTokens = "abcd".repeat(250);
+    const messages = withProtectedTail([
+      { role: "tool" as const, content: aroundMinTokens, toolName: "bash" },
+    ]);
+
+    const compressed = compressConversation(messages, { storeDir });
+
+    expect(compressed[0]?.compressed).toBe(true);
+    expect(compressed[0]?.content).toMatch(/^<<compressor:[0-9a-f]{64}>>\n/);
+    expect(compressed[0]?.content.length).toBeLessThan(aroundMinTokens.length);
+    expect(retrieve(compressed[0]?.content, { storeDir })).toBe(aroundMinTokens);
+  });
+
+  it("leaves excluded coding-tool and retrieve results verbatim", () => {
+    const storeDir = tempStore();
+    const excludedTools = [
+      "Read",
+      "Glob",
+      "Grep",
+      "Write",
+      "Edit",
+      "WebSearch",
+      "WebFetch",
+      "compressor_retrieve",
+      "headroom_retrieve",
+      "read",
+      "web_search",
+      "web_fetch",
+    ];
+    const messages = withProtectedTail(
+      excludedTools.map((toolName) => ({
+        role: "tool" as const,
+        toolName,
+        content: LONG_ORIGINAL,
+      })),
+    );
+
+    expect(compressConversation(messages, { storeDir })).toEqual(messages);
+    expect(readdirSync(storeDir)).toEqual([]);
+  });
+
+  it("compresses an eligible long system message", () => {
+    const storeDir = tempStore();
+    const messages = withProtectedTail([
+      { role: "system" as const, content: LONG_ORIGINAL },
+    ]);
+
+    const compressed = compressConversation(messages, { storeDir });
+
+    expect(compressed[0]).toEqual({
+      role: "system",
+      compressed: true,
+      content: STUB_CRUSHED,
+    });
+    expect(retrieve(STUB_CRUSHED, { storeDir })).toBe(LONG_ORIGINAL);
+  });
+
+  it("does not nest an already-marked compressed message into another locator", () => {
+    const storeDir = tempStore();
+    const messages = withProtectedTail([
+      {
+        role: "tool" as const,
+        toolName: "bash",
+        compressed: true,
+        content: LONG_ORIGINAL,
+      },
+    ]);
+
+    expect(compressConversation(messages, { storeDir })).toEqual(messages);
+    expect(readdirSync(storeDir)).toEqual([]);
+  });
+
+  it("leaves a message as-is when a locator would not shrink it", () => {
+    const storeDir = tempStore();
+    const originals = withProtectedTail([
+      { role: "tool" as const, content: LONG_ORIGINAL, toolName: "bash" },
+      { role: "system" as const, content: "x".repeat(1000) },
+    ]);
+
+    const compressed = compressConversation(originals, { storeDir });
+
+    for (const [index, message] of compressed.entries()) {
+      expect(message.content.length).toBeLessThanOrEqual(
+        originals[index]!.content.length,
+      );
+    }
+    expect(compressed[0]?.content.length).toBeLessThan(LONG_ORIGINAL.length);
+    expect(compressed[1]?.content.length).toBeLessThan(1000);
+  });
+
+  it("never compresses the last four messages", () => {
+    const storeDir = tempStore();
+    const messages = [
+      { role: "tool" as const, content: LONG_ORIGINAL, toolName: "bash" },
+      { role: "assistant" as const, content: LONG_ORIGINAL },
+      { role: "system" as const, content: LONG_ORIGINAL },
+      { role: "tool" as const, content: LONG_ORIGINAL, toolName: "bash" },
+    ];
+
+    expect(compressConversation(messages, { storeDir })).toEqual(messages);
+    expect(readdirSync(storeDir)).toEqual([]);
   });
 });

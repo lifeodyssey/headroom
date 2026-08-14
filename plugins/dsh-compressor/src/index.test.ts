@@ -49,6 +49,10 @@ describe("plugin surface", () => {
     try {
       compressConversation([
         { role: "tool", content: LONG_ORIGINAL, toolName: "bash" },
+        { role: "assistant", content: "tail-1" },
+        { role: "assistant", content: "tail-2" },
+        { role: "assistant", content: "tail-3" },
+        { role: "assistant", content: "tail-4" },
       ]);
 
       apply({
