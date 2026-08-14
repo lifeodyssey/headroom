@@ -68,6 +68,19 @@ const LAST_LIST_ITEMS = 3;
 const MAX_LIST_ITEMS = 15;
 const LIST_SIMILARITY_RATIO = 0.5;
 const LIST_PREFIX = /^\s*(?:[-*+]|\d+[.)])\s/;
+// Slim CJK-aware prose crush: extractive sentences/clauses, keep anchors.
+// Hangul uses eojeol + syllable bigrams, not CJK unigrams or English words.
+const MIN_PROSE_SEGMENTS = 6;
+const PROSE_TARGET_RATIO = 0.35;
+const CJK_SEGMENT_SOFT = 60;
+const CJK_SEGMENT_HARD = 40;
+const CJK_TERMINATORS = new Set(["。", "！", "？"]);
+const ASCII_TERMINATORS = new Set([".", "!", "?"]);
+const CJK_SECONDARY = new Set(["、", "，", "；", "：", "·", "…", ",", ";"]);
+const ERROR_LIKE =
+  /\b(?:error|exception|fail(?:ed|ure)?|fatal|critical|warning|traceback|assert|todo|fixme)\b|失败|错误|失敗|エラー|오류|실패/i;
+const TITLE_MARK = /[《「『【][^》」』】]{1,40}[》」』】]/;
+const LATIN_WORD = /[A-Za-z_][A-Za-z0-9_]*/g;
 const LOG_LINE_PATTERN =
   /\b(?:error|fail(?:ed)?|fatal|critical|warn(?:ing)?|info|debug|trace|passed|skipped)\b|^\s*\d{4}-\d{2}-\d{2}|^\s*\[\d{2}:\d{2}:\d{2}\]|^={3,}|^-{3,}|^npm ERR!|Traceback \(most recent call last\)/i;
 const ERROR_OR_FAIL = /\b(?:error|fail(?:ed)?|fatal|critical)\b/i;
@@ -187,6 +200,253 @@ function crushLog(text: string): string {
     .join("\n");
 }
 
+function isHangulCodePoint(codePoint: number): boolean {
+  return codePoint >= 0xac00 && codePoint <= 0xd7af;
+}
+
+function isHanOrKanaCodePoint(codePoint: number): boolean {
+  return (
+    (codePoint >= 0x3040 && codePoint <= 0x30ff) ||
+    (codePoint >= 0x3400 && codePoint <= 0x4dbf) ||
+    (codePoint >= 0x4e00 && codePoint <= 0x9fff) ||
+    (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
+    (codePoint >= 0x20000 && codePoint <= 0x2a6df)
+  );
+}
+
+function charHasCjk(char: string): boolean {
+  const codePoint = char.codePointAt(0);
+  return codePoint !== undefined && isCjkCodePoint(codePoint);
+}
+
+function textHasCjk(text: string): boolean {
+  for (const char of text) {
+    if (charHasCjk(char)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function splitSentences(line: string): string[] {
+  const segs: string[] = [];
+  let current = "";
+  const chars = [...line];
+  for (let i = 0; i < chars.length; i++) {
+    const char = chars[i]!;
+    current += char;
+    const next = chars[i + 1];
+    const cjkTerm = CJK_TERMINATORS.has(char);
+    const asciiTerm =
+      ASCII_TERMINATORS.has(char) &&
+      (next === undefined || /\s/.test(next) || charHasCjk(next));
+    if (cjkTerm || asciiTerm) {
+      const trimmed = current.trim();
+      if (trimmed.length > 0) {
+        segs.push(trimmed);
+      }
+      current = "";
+    }
+  }
+  const trimmed = current.trim();
+  if (trimmed.length > 0) {
+    segs.push(trimmed);
+  }
+  return segs;
+}
+
+function applyCjkLengthFallback(segments: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const segment of segments) {
+    const chars = [...segment];
+    if (chars.length <= CJK_SEGMENT_SOFT || !textHasCjk(segment)) {
+      out.push(segment);
+      continue;
+    }
+    let piece = "";
+    let pieceChars = 0;
+    for (const char of chars) {
+      piece += char;
+      pieceChars += 1;
+      const soft = /\s/.test(char) || CJK_SECONDARY.has(char);
+      if ((soft && pieceChars >= CJK_SEGMENT_HARD / 2) || pieceChars >= CJK_SEGMENT_HARD) {
+        const trimmed = piece.trim();
+        if (trimmed.length > 0) {
+          out.push(trimmed);
+        }
+        piece = "";
+        pieceChars = 0;
+      }
+    }
+    const trimmed = piece.trim();
+    if (trimmed.length > 0) {
+      out.push(trimmed);
+    }
+  }
+  return out;
+}
+
+function splitProseSegments(text: string): string[] {
+  const segs: string[] = [];
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) {
+      continue;
+    }
+    segs.push(...splitSentences(trimmed));
+  }
+  return applyCjkLengthFallback(segs);
+}
+
+function scriptBigrams(
+  text: string,
+  pred: (codePoint: number) => boolean,
+): string[] {
+  const grams: string[] = [];
+  let run: string[] = [];
+  const flush = (): void => {
+    for (let i = 0; i < run.length - 1; i++) {
+      grams.push(`${run[i]!}${run[i + 1]!}`);
+    }
+    run = [];
+  };
+  for (const char of text) {
+    const codePoint = char.codePointAt(0);
+    if (codePoint !== undefined && pred(codePoint)) {
+      run.push(char);
+    } else {
+      flush();
+    }
+  }
+  flush();
+  return grams;
+}
+
+function documentFrequency(gramsPerSeg: readonly string[][]): Map<string, number> {
+  const df = new Map<string, number>();
+  for (const grams of gramsPerSeg) {
+    for (const gram of new Set(grams)) {
+      df.set(gram, (df.get(gram) ?? 0) + 1);
+    }
+  }
+  return df;
+}
+
+function hasLatinIdentifier(text: string): boolean {
+  for (const match of text.matchAll(LATIN_WORD)) {
+    const word = match[0];
+    if (word.includes("_") || /[a-z][A-Z]/.test(word)) {
+      return true;
+    }
+    const letters = word.replace(/[^A-Za-z]/g, "");
+    if (letters.length >= 2 && letters === letters.toUpperCase()) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function strongAnchorScore(segment: string): number {
+  let score = 0;
+  if (segment.includes("://")) {
+    score += 2;
+  }
+  if (ERROR_LIKE.test(segment)) {
+    score += 2;
+  }
+  if (TITLE_MARK.test(segment)) {
+    score += 2;
+  }
+  if (hasLatinIdentifier(segment)) {
+    score += 1.5;
+  }
+  if (/(?:^|[\s])(?:\/|~\/)\S+/.test(segment) || /(?:^|[\s])--?[A-Za-z]/.test(segment)) {
+    score += 1;
+  }
+  return score;
+}
+
+function proseTemplate(segment: string): string {
+  return segment.replace(/\d+/g, "#").replace(/\s+/g, " ");
+}
+
+function crushProse(text: string): string {
+  const segments = splitProseSegments(text);
+  if (segments.length < MIN_PROSE_SEGMENTS) {
+    return "";
+  }
+
+  const hangulGrams = segments.map((segment) =>
+    scriptBigrams(segment, isHangulCodePoint),
+  );
+  const hanGrams = segments.map((segment) =>
+    scriptBigrams(segment, isHanOrKanaCodePoint),
+  );
+  const hangulDf = documentFrequency(hangulGrams);
+  const hanDf = documentFrequency(hanGrams);
+  const n = segments.length;
+  const scores = segments.map((segment, index) => {
+    let rareHangul = 0;
+    for (const gram of new Set(hangulGrams[index]!)) {
+      if (hangulDf.get(gram) === 1) {
+        rareHangul += 0.8;
+      }
+    }
+    let rareHan = 0;
+    for (const gram of new Set(hanGrams[index]!)) {
+      if (hanDf.get(gram) === 1) {
+        rareHan += 0.4;
+      }
+    }
+    return (
+      (index + 1) / n +
+      strongAnchorScore(segment) +
+      (/\d/.test(segment) ? 0.3 : 0) +
+      rareHangul +
+      rareHan
+    );
+  });
+
+  const targetChars = Math.max(1, Math.floor(text.length * PROSE_TARGET_RATIO));
+  const keep = new Set<number>();
+  let keptChars = 0;
+  for (let i = 0; i < n; i++) {
+    if (strongAnchorScore(segments[i]!) > 0) {
+      keep.add(i);
+      keptChars += segments[i]!.length;
+    }
+  }
+
+  const order = segments.map((_, index) => index).sort((a, b) => {
+    const delta = scores[b]! - scores[a]!;
+    return delta !== 0 ? delta : a - b;
+  });
+  const seenTemplates = new Set<string>();
+  for (const i of keep) {
+    seenTemplates.add(proseTemplate(segments[i]!));
+  }
+  for (const i of order) {
+    if (keep.has(i) || keptChars >= targetChars) {
+      continue;
+    }
+    const template = proseTemplate(segments[i]!);
+    if (seenTemplates.has(template)) {
+      continue;
+    }
+    keep.add(i);
+    seenTemplates.add(template);
+    keptChars += segments[i]!.length;
+  }
+
+  if (keep.size === 0) {
+    return "";
+  }
+  return [...keep]
+    .sort((a, b) => a - b)
+    .map((i) => segments[i]!)
+    .join("\n");
+}
+
 function visibleCrush(original: string, hash: string): string {
   const locatorAndHint = `<<compressor:${hash}>>\n${RETRIEVE_HINT}`;
   const jsonItems = tryParseJsonArray(original);
@@ -199,6 +459,12 @@ function visibleCrush(original: string, hash: string): string {
   if (isStructuredList(original)) {
     const lines = original.split("\n").filter((line) => line.trim().length > 0);
     return `${crushStructuredList(lines)}\n${locatorAndHint}`;
+  }
+  if (textHasCjk(original)) {
+    const crushed = crushProse(original);
+    if (crushed.length > 0) {
+      return `${crushed}\n${locatorAndHint}`;
+    }
   }
   return locatorAndHint;
 }

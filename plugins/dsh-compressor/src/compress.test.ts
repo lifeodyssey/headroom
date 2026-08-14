@@ -484,4 +484,104 @@ describe("compressConversation", () => {
     expect(compressConversation(messages, { storeDir })).toEqual(messages);
     expect(readdirSync(storeDir)).toEqual([]);
   });
+
+  it("crushes long CJK prose to an extractive keep plus a locator", () => {
+    const storeDir = tempStore();
+    const filler = Array.from(
+      { length: 24 },
+      (_, index) =>
+        `第${index}号监控服务器的日志显示子系统今天运行平稳没有出现异常。`,
+    ).join("");
+    const needle =
+      "认证令牌的缓存采用最近最少使用淘汰算法。" +
+      "parseConfig 在端口 8080 请求 https://example.com/auth 时返回 ERROR。" +
+      "详见《认证令牌规范》。";
+    const payload = `${filler.slice(0, filler.length / 2)}${needle}${filler.slice(filler.length / 2)}`;
+    const messages = withProtectedTail([
+      { role: "tool" as const, content: payload, toolName: "bash" },
+    ]);
+
+    const compressed = compressConversation(messages, { storeDir });
+    const crushed = compressed[0]?.content ?? "";
+
+    expect(compressed[0]?.compressed).toBe(true);
+    expect(crushed.length).toBeLessThan(payload.length);
+    expect(crushed).toMatch(/8080/);
+    expect(crushed).toMatch(/parseConfig/);
+    expect(crushed).toMatch(/https:\/\/example\.com\/auth/);
+    expect(crushed).toMatch(/ERROR/);
+    expect(crushed).toMatch(/认证令牌规范/);
+    expect(crushed).not.toMatch(/第12号监控服务器/);
+    expect(crushed).toMatch(/<<compressor:[0-9a-f]{64}>>/);
+    expect(crushed).toContain(RETRIEVE_HINT);
+    expect(retrieve(crushed, { storeDir })).toBe(payload);
+  });
+
+  it("crushes long Korean with sub-eojeol keep, not CJK-char or English-word split", () => {
+    const storeDir = tempStore();
+    const filler = Array.from(
+      { length: 24 },
+      (_, index) =>
+        `${index}번 모니터링 서버의 로그에는 데이터 베이스 하위 시스템이 오늘도 정상 작동했다고 기록되어 있다。`,
+    ).join("");
+    const needle =
+      "인증 토큰 캐시는 최근 최소 사용 알고리즘으로 관리된다。" +
+      "포트 8080 의 parseConfig 가 https://example.com/auth 에서 ERROR 를 반환한다。" +
+      "데이터베이스연결정보는 「최근최소사용」 규격을 따른다。";
+    const payload = `${filler.slice(0, filler.length / 2)}${needle}${filler.slice(filler.length / 2)}`;
+    const messages = withProtectedTail([
+      { role: "tool" as const, content: payload, toolName: "bash" },
+    ]);
+
+    const compressed = compressConversation(messages, { storeDir });
+    const crushed = compressed[0]?.content ?? "";
+
+    expect(compressed[0]?.compressed).toBe(true);
+    expect(crushed.length).toBeLessThan(payload.length);
+    expect(crushed).toContain("데이터베이스");
+    expect(crushed).toMatch(/최근최소사용|최근 최소 사용/);
+    expect(crushed).not.toContain("데 이 터 베 이 스");
+    expect(crushed).toMatch(/8080/);
+    expect(crushed).toMatch(/parseConfig/);
+    expect(crushed).toMatch(/ERROR/);
+    expect(crushed).toMatch(/[\uac00-\ud7a3]{2,}/);
+    expect(crushed).toMatch(/<<compressor:[0-9a-f]{64}>>/);
+    expect(crushed).toContain(RETRIEVE_HINT);
+    expect(retrieve(crushed, { storeDir })).toBe(payload);
+  });
+
+  it("does not enable code-aware compression or Kompress", () => {
+    const storeDir = tempStore();
+    const payload = Array.from(
+      { length: 40 },
+      (_, index) =>
+        `function handleRequest${index}(req, res) {\n` +
+        `  const uniqueBody${index} = computePayload${index}(req);\n` +
+        `  res.end(JSON.stringify({ uniqueBody${index}, index: ${index} }));\n` +
+        `  return uniqueBody${index};\n` +
+        `}`,
+    ).join("\n");
+    const messages = withProtectedTail([
+      { role: "tool" as const, content: payload, toolName: "bash" },
+    ]);
+
+    const compressed = compressConversation(messages, { storeDir });
+    const crushed = compressed[0]?.content ?? "";
+    const visible = crushed
+      .replace(/<<compressor:[0-9a-f]{64}>>[\s\S]*$/, "")
+      .trim();
+
+    expect(compressed[0]?.compressed).toBe(true);
+    expect(crushed.length).toBeLessThan(payload.length);
+    expect(crushed).toMatch(/<<compressor:[0-9a-f]{64}>>/);
+    expect(crushed).not.toMatch(
+      /function handleRequest0\([^)]*\)\s*\{\s*\.\.\.\s*\}/,
+    );
+    for (const line of visible.split("\n")) {
+      if (line.length > 0) {
+        expect(payload).toContain(line);
+      }
+    }
+    expect(retrieve(crushed, { storeDir })).toBe(payload);
+  });
 });
