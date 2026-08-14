@@ -28,6 +28,13 @@ function flattenText(content) {
     }
     return parts.join("");
 }
+function firstToolResultIsError(content) {
+    if (!Array.isArray(content)) {
+        return false;
+    }
+    const block = content[0];
+    return block?.type === "tool-result" && block.isError === true;
+}
 function callNames(session) {
     const names = new Map();
     for (const event of session.events) {
@@ -55,10 +62,12 @@ function eventToConversation(event, names) {
         }
         if (message.source?.kind === "tool") {
             const toolName = toolNameForResult(event, names);
+            const isError = firstToolResultIsError(message.content);
             return {
                 role: "tool",
                 content: text,
                 ...(toolName === undefined ? {} : { toolName }),
+                ...(isError ? { isError: true } : {}),
             };
         }
         return { role: "user", content: text };
@@ -79,10 +88,12 @@ function eventToConversation(event, names) {
             return undefined;
         }
         const toolName = toolNameForResult(event, names);
+        const isError = block?.isError === true;
         return {
             role: "tool",
             content: text,
             ...(toolName === undefined ? {} : { toolName }),
+            ...(isError ? { isError: true } : {}),
         };
     }
     return undefined;

@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { crushByDetectedType, nativeAvailable } from "./native.js";
+import { crushByDetectedType, detectContentType, nativeAvailable } from "./native.js";
 
 export type MessageRole = "user" | "assistant" | "system" | "tool";
 
@@ -12,18 +12,31 @@ export type ConversationMessage = {
   content: string;
   toolName?: string;
   compressed?: boolean;
+  isError?: boolean;
 };
 
 export type CompressOptions = {
   storeDir?: string;
 };
 
-// Headroom coding-agent defaults: skip user turns; protect the live tail;
-// skip messages under about 250 tokens.
-const PROTECT_RECENT = 4;
-const MIN_TOKENS_TO_COMPRESS = 250;
+// Official ContentRouter defaults (Kompress and code-aware stay off).
+const PROTECT_RECENT_CODE = 4;
+const MIN_TOKENS_TO_COMPRESS = 50;
+const MIN_CHARS_FOR_BLOCK_COMPRESSION = 500;
+const ERROR_PROTECTION_MAX_CHARS = 8000;
 const CHARS_PER_TOKEN = 4;
 const CHARS_PER_TOKEN_CJK = 1.5;
+const ERROR_INDICATOR_KEYWORDS = [
+  "error",
+  "fail",
+  "exception",
+  "traceback",
+  "fatal",
+  "panic",
+  "crash",
+] as const;
+const ZERO_RESULT_PATTERN =
+  /\b(?:0|no)\s+(?:errors?|fail(?:ed|ing|ures?)?)\b|\b(?:errors?|fail(?:ed|ing|ures?)?)\s*[:=]\s*0\b/gi;
 const RETRIEVE_HINT =
   "Call compressor_retrieve with this locator or its hash to restore the original. This is not a filesystem path.";
 
@@ -59,6 +72,51 @@ const BARE_HASH_PATTERN = /^[0-9a-f]{64}$/;
 
 function isExcludedTool(toolName: string | undefined): boolean {
   return toolName !== undefined && DEFAULT_EXCLUDE_TOOLS.has(toolName.toLowerCase());
+}
+
+function contentHasStrongErrorIndicators(text: string): boolean {
+  const lowered = text.toLowerCase().replace(ZERO_RESULT_PATTERN, " ");
+  let hits = 0;
+  for (const keyword of ERROR_INDICATOR_KEYWORDS) {
+    if (lowered.includes(keyword)) {
+      hits += 1;
+      if (hits >= 2) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function looksLikeProtectedError(text: string): boolean {
+  const trimmed = text.trimStart();
+  if (/^error\b/i.test(trimmed) || /^tool failed\b/i.test(trimmed)) {
+    return true;
+  }
+  if (/traceback \(most recent call last\)/i.test(text)) {
+    return true;
+  }
+  return contentHasStrongErrorIndicators(text);
+}
+
+function isProtectedErrorOutput(message: ConversationMessage): boolean {
+  if (message.role !== "tool") {
+    return false;
+  }
+  if (message.content.length > ERROR_PROTECTION_MAX_CHARS) {
+    return false;
+  }
+  if (message.isError === true) {
+    return true;
+  }
+  return looksLikeProtectedError(message.content);
+}
+
+function isRecentSourceCode(content: string, messagesFromEnd: number): boolean {
+  if (messagesFromEnd > PROTECT_RECENT_CODE || !nativeAvailable()) {
+    return false;
+  }
+  return detectContentType(content).contentType === "source_code";
 }
 
 function isCjkCodePoint(codePoint: number): boolean {
@@ -161,10 +219,7 @@ export function compressConversation(
   options?: CompressOptions,
 ): ConversationMessage[] {
   return messages.map((message, index) => {
-    if (message.role === "user") {
-      return { ...message };
-    }
-    if (messages.length - index <= PROTECT_RECENT) {
+    if (message.role === "user" || message.role === "system" || message.role === "assistant") {
       return { ...message };
     }
     if (isExcludedTool(message.toolName)) {
@@ -173,7 +228,16 @@ export function compressConversation(
     if (message.compressed === true) {
       return { ...message };
     }
-    if (estimateTokens(message.content) < MIN_TOKENS_TO_COMPRESS) {
+    if (
+      estimateTokens(message.content) < MIN_TOKENS_TO_COMPRESS ||
+      message.content.length < MIN_CHARS_FOR_BLOCK_COMPRESSION
+    ) {
+      return { ...message };
+    }
+    if (isProtectedErrorOutput(message)) {
+      return { ...message };
+    }
+    if (isRecentSourceCode(message.content, messages.length - index)) {
       return { ...message };
     }
 

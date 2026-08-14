@@ -59,9 +59,55 @@ function withProtectedTail(
   return [...messages, ...PROTECTED_TAIL];
 }
 
+function sourceCodeBlob(): string {
+  return Array.from(
+    { length: 40 },
+    (_, index) =>
+      `function handleRequest${index}(req, res) {\n` +
+      `  const uniqueBody${index} = computePayload${index}(req);\n` +
+      `  res.end(JSON.stringify({ uniqueBody${index}, index: ${index} }));\n` +
+      `  return uniqueBody${index};\n` +
+      `}`,
+  ).join("\n");
+}
+
+function underCharGateProse(): string {
+  return Array.from(
+    { length: 20 },
+    (_, index) =>
+      `第${index}号监控服务器的日志显示子系统今天运行平稳没有出现异常。`,
+  )
+    .join("")
+    .slice(0, 400);
+}
+
+function midSizeInfoLog(): string {
+  return Array.from(
+    { length: 32 },
+    (_, index) => `INFO compiling unit ${index} ok`,
+  ).join("\n");
+}
+
+function errorTraceback(): string {
+  return (
+    "Traceback (most recent call last):\n" +
+    Array.from(
+      { length: 12 },
+      (_, index) =>
+        `  File "/app/services/worker_${index}.py", line ${index * 17}, in handle_request\n` +
+        `    result = downstream.dispatch(payload, retries=${index})\n`,
+    ).join("") +
+    "ValueError: connection refused while dispatching payload to upstream " +
+    "service after 3 retries; check that the worker pool is initialized " +
+    "before the scheduler starts accepting jobs\n"
+  );
+}
+
 function mixedLogListCjk(): string {
   const logLines = ["===== test session starts ====="];
-  for (let i = 0; i < 80; i++) {
+  // Stay over the 8000-char error-protection cap so FAIL/ERROR logs
+  // still reach LogCompressor instead of being held verbatim.
+  for (let i = 0; i < 160; i++) {
     logLines.push(`INFO compiling unit ${i} ok`);
   }
   for (let i = 0; i < 15; i++) {
@@ -254,7 +300,7 @@ describe("compressConversation", () => {
     const storeDir = tempStore();
     const messages = withProtectedTail([
       { role: "tool" as const, content: LONG_ORIGINAL, toolName: "bash" },
-      { role: "assistant" as const, content: LONG_ORIGINAL },
+      { role: "tool" as const, content: LONG_ORIGINAL, toolName: "run_code" },
     ]);
 
     const compressed = compressConversation(messages, { storeDir });
@@ -267,35 +313,32 @@ describe("compressConversation", () => {
     expect(readdirSync(storeDir)).toEqual([LONG_HASH]);
   });
 
-  it("leaves messages under about 250 tokens as-is", () => {
+  it("leaves a 400-character block with enough tokens verbatim", () => {
     const storeDir = tempStore();
-    const shortOriginal = "ok ".repeat(200);
+    const payload = underCharGateProse();
     const messages = withProtectedTail([
-      { role: "tool" as const, content: shortOriginal, toolName: "bash" },
+      { role: "tool" as const, content: payload, toolName: "bash" },
     ]);
 
+    expect(payload.length).toBe(400);
     expect(compressConversation(messages, { storeDir })).toEqual(messages);
     expect(readdirSync(storeDir)).toEqual([]);
   });
 
-  it("compresses an eligible message of about 250 tokens", () => {
+  it("compresses an eligible block over 50 tokens and 500 characters", () => {
     const storeDir = tempStore();
-    const aroundMinTokens = [
-      "===== test session starts =====",
-      ...Array.from({ length: 80 }, (_, index) => `INFO compiling unit ${index} ok`),
-      "ERROR cannot find symbol Foo",
-      "===== 1 failed, 80 passed =====",
-    ].join("\n");
+    const payload = midSizeInfoLog();
     const messages = withProtectedTail([
-      { role: "tool" as const, content: aroundMinTokens, toolName: "bash" },
+      { role: "tool" as const, content: payload, toolName: "bash" },
     ]);
 
     const compressed = compressConversation(messages, { storeDir });
 
+    expect(payload.length).toBeGreaterThan(500);
     expect(compressed[0]?.compressed).toBe(true);
     expect(compressed[0]?.content).toMatch(/<<compressor:[0-9a-f]{64}>>/);
-    expect(compressed[0]?.content.length).toBeLessThan(aroundMinTokens.length);
-    expect(retrieve(compressed[0]?.content, { storeDir })).toBe(aroundMinTokens);
+    expect(compressed[0]?.content.length).toBeLessThan(payload.length);
+    expect(retrieve(compressed[0]?.content, { storeDir })).toBe(payload);
   });
 
   it("leaves excluded coding-tool and retrieve results verbatim", () => {
@@ -326,19 +369,37 @@ describe("compressConversation", () => {
     expect(readdirSync(storeDir)).toEqual([]);
   });
 
-  it("compresses an eligible long system message", () => {
+  it("does not compress system messages by default", () => {
     const storeDir = tempStore();
     const messages = withProtectedTail([
       { role: "system" as const, content: LONG_ORIGINAL },
     ]);
 
-    const compressed = compressConversation(messages, { storeDir });
+    expect(compressConversation(messages, { storeDir })).toEqual(messages);
+    expect(readdirSync(storeDir)).toEqual([]);
+  });
 
-    expect(compressed[0]?.role).toBe("system");
-    expect(compressed[0]?.compressed).toBe(true);
-    expect(compressed[0]?.content).toContain(LONG_LOCATOR);
-    expect(compressed[0]?.content).toContain(RETRIEVE_HINT);
-    expect(retrieve(compressed[0]?.content, { storeDir })).toBe(LONG_ORIGINAL);
+  it("does not compress assistant text", () => {
+    const storeDir = tempStore();
+    const messages = withProtectedTail([
+      { role: "assistant" as const, content: LONG_ORIGINAL },
+    ]);
+
+    expect(compressConversation(messages, { storeDir })).toEqual(messages);
+    expect(readdirSync(storeDir)).toEqual([]);
+  });
+
+  it("leaves a short error traceback under 8000 characters verbatim", () => {
+    const storeDir = tempStore();
+    const traceback = errorTraceback();
+    const messages = withProtectedTail([
+      { role: "tool" as const, content: traceback, toolName: "bash" },
+    ]);
+
+    expect(traceback.length).toBeGreaterThan(500);
+    expect(traceback.length).toBeLessThanOrEqual(8000);
+    expect(compressConversation(messages, { storeDir })).toEqual(messages);
+    expect(readdirSync(storeDir)).toEqual([]);
   });
 
   it("does not nest an already-marked compressed message into another locator", () => {
@@ -449,7 +510,7 @@ describe("compressConversation", () => {
   it("crushes a long log to a readable extract plus a locator", () => {
     const storeDir = tempStore();
     const logLines = ["===== test session starts ====="];
-    for (let i = 0; i < 80; i++) {
+    for (let i = 0; i < 300; i++) {
       logLines.push(`INFO compiling unit ${i} ok`);
     }
     for (let i = 0; i < 15; i++) {
@@ -495,17 +556,46 @@ describe("compressConversation", () => {
 
     const compressed = compressConversation(messages, { storeDir });
 
-    expect(compressed).toEqual(messages);
-    expect(readdirSync(storeDir)).toEqual([]);
+    expect(compressed[0]).toEqual(messages[0]);
+    expect(compressed[1]).toEqual(messages[1]);
+    expect(compressed[2]?.compressed).toBe(true);
+    expect(compressed[2]?.content.length).toBeLessThan(payload.length);
+    expect(compressed[3]).toEqual(messages[3]);
+    expect(compressed[4]).toEqual(messages[4]);
+    expect(compressed[5]?.compressed).toBe(true);
+    expect(compressed[5]?.content.length).toBeLessThan(payload.length);
+    expect(retrieve(compressed[2]?.content, { storeDir })).toBe(payload);
+    expect(retrieve(compressed[5]?.content, { storeDir })).toBe(payload);
   });
 
-  it("never compresses the last four messages", () => {
+  it("crushes a long log in the last four messages", () => {
     const storeDir = tempStore();
     const messages = [
       { role: "tool" as const, content: LONG_ORIGINAL, toolName: "bash" },
-      { role: "assistant" as const, content: LONG_ORIGINAL },
-      { role: "system" as const, content: LONG_ORIGINAL },
-      { role: "tool" as const, content: LONG_ORIGINAL, toolName: "bash" },
+      { role: "assistant" as const, content: "tail-1" },
+      { role: "system" as const, content: "tail-2" },
+      { role: "tool" as const, content: "ok", toolName: "bash" },
+    ];
+
+    const compressed = compressConversation(messages, { storeDir });
+
+    expect(compressed[0]?.compressed).toBe(true);
+    expect(compressed[0]?.content).toContain(LONG_LOCATOR);
+    expect(compressed[0]?.content.length).toBeLessThan(LONG_ORIGINAL.length);
+    expect(compressed[1]).toEqual(messages[1]);
+    expect(compressed[2]).toEqual(messages[2]);
+    expect(compressed[3]).toEqual(messages[3]);
+    expect(retrieve(compressed[0]?.content, { storeDir })).toBe(LONG_ORIGINAL);
+  });
+
+  it("leaves source code in the last four messages verbatim", () => {
+    const storeDir = tempStore();
+    const payload = sourceCodeBlob();
+    const messages = [
+      { role: "tool" as const, content: payload, toolName: "bash" },
+      { role: "assistant" as const, content: "tail-1" },
+      { role: "assistant" as const, content: "tail-2" },
+      { role: "assistant" as const, content: "tail-3" },
     ];
 
     expect(compressConversation(messages, { storeDir })).toEqual(messages);
@@ -578,15 +668,7 @@ describe("compressConversation", () => {
 
   it("does not enable code-aware compression or Kompress", () => {
     const storeDir = tempStore();
-    const payload = Array.from(
-      { length: 40 },
-      (_, index) =>
-        `function handleRequest${index}(req, res) {\n` +
-        `  const uniqueBody${index} = computePayload${index}(req);\n` +
-        `  res.end(JSON.stringify({ uniqueBody${index}, index: ${index} }));\n` +
-        `  return uniqueBody${index};\n` +
-        `}`,
-    ).join("\n");
+    const payload = sourceCodeBlob();
     const messages = withProtectedTail([
       { role: "tool" as const, content: payload, toolName: "bash" },
     ]);
@@ -632,7 +714,17 @@ describe("compressConversation", () => {
       { role: "tool" as const, content: payload, toolName: "bash" },
     ];
 
-    expect(compressConversation(messages, { storeDir })).toEqual(messages);
-    expect(readdirSync(storeDir)).toEqual([]);
+    const compressed = compressConversation(messages, { storeDir });
+
+    expect(compressed[0]).toEqual(messages[0]);
+    expect(compressed[1]).toEqual(messages[1]);
+    expect(compressed[2]?.compressed).toBe(true);
+    expect(compressed[2]?.content.length).toBeLessThan(payload.length);
+    expect(compressed[3]).toEqual(messages[3]);
+    expect(compressed[4]).toEqual(messages[4]);
+    expect(compressed[5]?.compressed).toBe(true);
+    expect(compressed[5]?.content.length).toBeLessThan(payload.length);
+    expect(retrieve(compressed[2]?.content, { storeDir })).toBe(payload);
+    expect(readdirSync(storeDir)).toHaveLength(1);
   });
 });

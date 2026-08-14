@@ -4,6 +4,7 @@ export type ConversationMessage = {
     content: string;
     toolName?: string;
     compressed?: boolean;
+    isError?: boolean;
 };
 export type CompressOptions = {
     storeDir?: string;

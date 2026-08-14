@@ -54,6 +54,14 @@ function flattenText(content: unknown): string | undefined {
   return parts.join("");
 }
 
+function firstToolResultIsError(content: unknown): boolean {
+  if (!Array.isArray(content)) {
+    return false;
+  }
+  const block = content[0] as { type?: unknown; isError?: unknown } | undefined;
+  return block?.type === "tool-result" && block.isError === true;
+}
+
 function callNames(session: SurfaceSession): Map<string, string> {
   const names = new Map<string, string>();
   for (const event of session.events) {
@@ -95,10 +103,12 @@ function eventToConversation(
     }
     if (message.source?.kind === "tool") {
       const toolName = toolNameForResult(event, names);
+      const isError = firstToolResultIsError(message.content);
       return {
         role: "tool",
         content: text,
         ...(toolName === undefined ? {} : { toolName }),
+        ...(isError ? { isError: true } : {}),
       };
     }
     return { role: "user", content: text };
@@ -121,10 +131,12 @@ function eventToConversation(
       return undefined;
     }
     const toolName = toolNameForResult(event, names);
+    const isError = block?.isError === true;
     return {
       role: "tool" as MessageRole,
       content: text,
       ...(toolName === undefined ? {} : { toolName }),
+      ...(isError ? { isError: true } : {}),
     };
   }
 
