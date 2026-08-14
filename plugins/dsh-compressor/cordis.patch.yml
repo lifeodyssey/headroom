@@ -1,0 +1,4 @@
+# Layer applied when a profile lists this bundle.
+- insert:
+    - id: dsh-compressor
+      name: dsh-compressor
