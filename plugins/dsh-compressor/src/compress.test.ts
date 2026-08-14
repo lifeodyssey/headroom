@@ -86,6 +86,7 @@ describe("compressConversation", () => {
       {
         role: "tool",
         toolName: "bash",
+        compressed: true,
         content: STUB_CRUSHED,
       },
     ]);

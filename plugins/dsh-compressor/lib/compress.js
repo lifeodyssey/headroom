@@ -19,6 +19,9 @@ function resolveStoreDir(storeDir) {
 const LOCATOR_PATTERN = /<<compressor:([0-9a-f]{64})>>/;
 const BARE_HASH_PATTERN = /^[0-9a-f]{64}$/;
 export function retrieve(locatorOrHash, options) {
+    if (typeof locatorOrHash !== "string" || locatorOrHash.length === 0) {
+        throw new Error("compressor_retrieve: missing or unknown hash");
+    }
     const locatorMatch = locatorOrHash.match(LOCATOR_PATTERN);
     const hash = locatorMatch?.[1] ??
         (BARE_HASH_PATTERN.test(locatorOrHash) ? locatorOrHash : undefined);
@@ -50,6 +53,7 @@ export function compressConversation(messages, options) {
         writeFileSync(join(storeDir, hash), message.content, "utf8");
         return {
             ...message,
+            compressed: true,
             content: `<<compressor:${hash}>>\n${RETRIEVE_HINT}`,
         };
     });

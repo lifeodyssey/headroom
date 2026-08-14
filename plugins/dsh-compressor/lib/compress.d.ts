@@ -8,5 +8,5 @@ export type ConversationMessage = {
 export type CompressOptions = {
     storeDir?: string;
 };
-export declare function retrieve(locatorOrHash: string, options?: CompressOptions): string;
+export declare function retrieve(locatorOrHash: string | undefined, options?: CompressOptions): string;
 export declare function compressConversation(messages: readonly ConversationMessage[], options?: CompressOptions): ConversationMessage[];

@@ -44,19 +44,22 @@ export function apply(ctx: object): void {
     description:
       "Restore original conversation text for a compressor locator or content hash. The locator is not a filesystem path.",
     parameters: {
-      locator: {
-        type: "string",
-        required: true,
-        description:
-          "Full <<compressor:hash>> locator or the bare content hash.",
+      type: "object",
+      properties: {
+        locator: {
+          type: "string",
+          description:
+            "Full <<compressor:hash>> locator or the bare content hash.",
+        },
       },
+      required: ["locator"],
     },
     output: {
       schema: { type: "string" },
       render: (_args: unknown, value: string) => [{ type: "text", text: value }],
     },
     async execute(args: RetrieveArgs) {
-      return retrieve(args.locator);
+      return retrieve(args?.locator);
     },
   });
 }
