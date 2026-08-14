@@ -1,3 +1,7 @@
+> **This fork (`lifeodyssey/dsh-compressor`) ships an in-process DeepSeek Harness plugin.**  
+> Install and test: see [`plugins/dsh-compressor/README.md`](plugins/dsh-compressor/README.md).  
+> Agent tracker docs: [`docs/agents/`](docs/agents/). Specs/plans: [`docs/superpowers/`](docs/superpowers/).
+
 <div align="center"><pre>
   ██╗  ██╗███████╗ █████╗ ██████╗ ██████╗  ██████╗  ██████╗ ███╗   ███╗
   ██║  ██║██╔════╝██╔══██╗██╔══██╗██╔══██╗██╔═══██╗██╔═══██╗████╗ ████║
