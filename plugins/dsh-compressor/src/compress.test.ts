@@ -333,6 +333,88 @@ describe("compressConversation", () => {
     expect(readdirSync(storeDir)).toEqual([]);
   });
 
+  it("crushes a large JSON array to a shortened list plus a locator", () => {
+    const storeDir = tempStore();
+    const items = Array.from({ length: 80 }, (_, index) => ({
+      id: index,
+      name: `record-${index}`,
+      status: index === 79 ? "error" : "ok",
+      detail: `payload field for record ${index} with extra padding text`,
+    }));
+    const payload = JSON.stringify(items, null, 2);
+    const messages = withProtectedTail([
+      { role: "tool" as const, content: payload, toolName: "bash" },
+    ]);
+
+    const compressed = compressConversation(messages, { storeDir });
+    const crushed = compressed[0]?.content ?? "";
+
+    expect(compressed[0]?.compressed).toBe(true);
+    expect(crushed.length).toBeLessThan(payload.length);
+    expect(crushed).toMatch(/80/);
+    expect(crushed).toMatch(/record-0/);
+    expect(crushed).toMatch(/record-79/);
+    expect(crushed).not.toMatch(/record-40/);
+    expect(crushed).toMatch(/<<compressor:[0-9a-f]{64}>>/);
+    expect(crushed).toContain(RETRIEVE_HINT);
+    expect(retrieve(crushed, { storeDir })).toBe(payload);
+  });
+
+  it("collapses obvious duplicate items in a JSON array crush", () => {
+    const storeDir = tempStore();
+    const duplicate = {
+      status: "ok",
+      code: 200,
+      detail: "repeated health-check payload with extra padding text",
+    };
+    const items = [
+      ...Array.from({ length: 70 }, () => duplicate),
+      { status: "error", code: 500, detail: "final unique failure payload" },
+    ];
+    const payload = JSON.stringify(items, null, 2);
+    const messages = withProtectedTail([
+      { role: "tool" as const, content: payload, toolName: "bash" },
+    ]);
+
+    const compressed = compressConversation(messages, { storeDir });
+    const crushed = compressed[0]?.content ?? "";
+
+    expect(compressed[0]?.compressed).toBe(true);
+    expect(crushed.length).toBeLessThan(payload.length);
+    expect(crushed).toMatch(/70/);
+    expect(crushed).toMatch(/200/);
+    expect(crushed).toMatch(/500/);
+    expect(crushed.split('"status":"ok"').length - 1).toBeLessThan(4);
+    expect(crushed).toMatch(/<<compressor:[0-9a-f]{64}>>/);
+    expect(retrieve(crushed, { storeDir })).toBe(payload);
+  });
+
+  it("crushes a structured list of similar lines plus a locator", () => {
+    const storeDir = tempStore();
+    const lines = Array.from(
+      { length: 80 },
+      (_, index) =>
+        `- file src/module-${index}.ts size=${1000 + index} hash=abc${index}`,
+    );
+    const payload = lines.join("\n");
+    const messages = withProtectedTail([
+      { role: "tool" as const, content: payload, toolName: "bash" },
+    ]);
+
+    const compressed = compressConversation(messages, { storeDir });
+    const crushed = compressed[0]?.content ?? "";
+
+    expect(compressed[0]?.compressed).toBe(true);
+    expect(crushed.length).toBeLessThan(payload.length);
+    expect(crushed).toMatch(/80/);
+    expect(crushed).toMatch(/module-0/);
+    expect(crushed).toMatch(/module-79/);
+    expect(crushed).not.toMatch(/module-40/);
+    expect(crushed).toMatch(/<<compressor:[0-9a-f]{64}>>/);
+    expect(crushed).toContain(RETRIEVE_HINT);
+    expect(retrieve(crushed, { storeDir })).toBe(payload);
+  });
+
   it("crushes a long log to a readable extract plus a locator", () => {
     const storeDir = tempStore();
     const logLines = ["===== test session starts ====="];
@@ -365,6 +447,29 @@ describe("compressConversation", () => {
     expect(crushed).toMatch(/<<compressor:[0-9a-f]{64}>>/);
     expect(crushed).toContain(RETRIEVE_HINT);
     expect(retrieve(crushed, { storeDir })).toBe(log);
+  });
+
+  it("still applies skip policy to a large JSON array", () => {
+    const storeDir = tempStore();
+    const items = Array.from({ length: 80 }, (_, index) => ({
+      id: index,
+      name: `record-${index}`,
+      detail: `payload field for record ${index} with extra padding text`,
+    }));
+    const payload = JSON.stringify(items, null, 2);
+    const messages = [
+      { role: "user" as const, content: payload },
+      { role: "tool" as const, content: payload, toolName: "Read" },
+      { role: "tool" as const, content: payload, toolName: "bash" },
+      { role: "assistant" as const, content: payload },
+      { role: "system" as const, content: payload },
+      { role: "tool" as const, content: payload, toolName: "bash" },
+    ];
+
+    const compressed = compressConversation(messages, { storeDir });
+
+    expect(compressed).toEqual(messages);
+    expect(readdirSync(storeDir)).toEqual([]);
   });
 
   it("never compresses the last four messages", () => {

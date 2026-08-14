@@ -61,6 +61,13 @@ const LOG_PATTERN_RATIO = 0.1;
 const MAX_ERROR_LINES = 20;
 const LAST_LOG_LINES = 8;
 const MAX_LOG_LINES = 40;
+// Slim SmartCrusher-style list crush: first/last items, counts, collapse dups.
+const MIN_LIST_ITEMS = 8;
+const FIRST_LIST_ITEMS = 3;
+const LAST_LIST_ITEMS = 3;
+const MAX_LIST_ITEMS = 15;
+const LIST_SIMILARITY_RATIO = 0.5;
+const LIST_PREFIX = /^\s*(?:[-*+]|\d+[.)])\s/;
 const LOG_LINE_PATTERN =
   /\b(?:error|fail(?:ed)?|fatal|critical|warn(?:ing)?|info|debug|trace|passed|skipped)\b|^\s*\d{4}-\d{2}-\d{2}|^\s*\[\d{2}:\d{2}:\d{2}\]|^={3,}|^-{3,}|^npm ERR!|Traceback \(most recent call last\)/i;
 const ERROR_OR_FAIL = /\b(?:error|fail(?:ed)?|fatal|critical)\b/i;
@@ -106,6 +113,59 @@ function collapseConsecutiveDuplicates(lines: readonly string[]): string[] {
   return collapsed;
 }
 
+function listTemplate(line: string): string {
+  return line.trim().replace(/\d+/g, "#").replace(/\s+/g, " ");
+}
+
+function isStructuredList(text: string): boolean {
+  const lines = text.split("\n").filter((line) => line.trim().length > 0);
+  if (lines.length < MIN_LIST_ITEMS) {
+    return false;
+  }
+  const prefixHits = lines.filter((line) => LIST_PREFIX.test(line)).length;
+  if (prefixHits / lines.length >= LIST_SIMILARITY_RATIO) {
+    return true;
+  }
+  const counts = new Map<string, number>();
+  for (const line of lines) {
+    const template = listTemplate(line);
+    counts.set(template, (counts.get(template) ?? 0) + 1);
+  }
+  return Math.max(...counts.values()) / lines.length >= LIST_SIMILARITY_RATIO;
+}
+
+function tryParseJsonArray(text: string): unknown[] | undefined {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("[")) {
+    return undefined;
+  }
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    return Array.isArray(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function formatListItem(item: unknown): string {
+  return typeof item === "string" ? item : JSON.stringify(item);
+}
+
+function crushStructuredList(items: readonly unknown[]): string {
+  const collapsed = collapseConsecutiveDuplicates(items.map(formatListItem));
+  const header = `${items.length} items`;
+  if (collapsed.length <= MAX_LIST_ITEMS) {
+    return [header, ...collapsed].join("\n");
+  }
+  const omitted = collapsed.length - FIRST_LIST_ITEMS - LAST_LIST_ITEMS;
+  return [
+    header,
+    ...collapsed.slice(0, FIRST_LIST_ITEMS),
+    `… ${omitted} more …`,
+    ...collapsed.slice(-LAST_LIST_ITEMS),
+  ].join("\n");
+}
+
 function crushLog(text: string): string {
   const collapsed = collapseConsecutiveDuplicates(text.split("\n"));
   const keep = new Set<number>();
@@ -129,10 +189,18 @@ function crushLog(text: string): string {
 
 function visibleCrush(original: string, hash: string): string {
   const locatorAndHint = `<<compressor:${hash}>>\n${RETRIEVE_HINT}`;
-  if (!isLogShaped(original)) {
-    return locatorAndHint;
+  const jsonItems = tryParseJsonArray(original);
+  if (jsonItems !== undefined && jsonItems.length >= MIN_LIST_ITEMS) {
+    return `${crushStructuredList(jsonItems)}\n${locatorAndHint}`;
   }
-  return `${crushLog(original)}\n${locatorAndHint}`;
+  if (isLogShaped(original)) {
+    return `${crushLog(original)}\n${locatorAndHint}`;
+  }
+  if (isStructuredList(original)) {
+    const lines = original.split("\n").filter((line) => line.trim().length > 0);
+    return `${crushStructuredList(lines)}\n${locatorAndHint}`;
+  }
+  return locatorAndHint;
 }
 
 function estimateTokens(text: string): number {

@@ -41,6 +41,13 @@ const LOG_PATTERN_RATIO = 0.1;
 const MAX_ERROR_LINES = 20;
 const LAST_LOG_LINES = 8;
 const MAX_LOG_LINES = 40;
+// Slim SmartCrusher-style list crush: first/last items, counts, collapse dups.
+const MIN_LIST_ITEMS = 8;
+const FIRST_LIST_ITEMS = 3;
+const LAST_LIST_ITEMS = 3;
+const MAX_LIST_ITEMS = 15;
+const LIST_SIMILARITY_RATIO = 0.5;
+const LIST_PREFIX = /^\s*(?:[-*+]|\d+[.)])\s/;
 const LOG_LINE_PATTERN = /\b(?:error|fail(?:ed)?|fatal|critical|warn(?:ing)?|info|debug|trace|passed|skipped)\b|^\s*\d{4}-\d{2}-\d{2}|^\s*\[\d{2}:\d{2}:\d{2}\]|^={3,}|^-{3,}|^npm ERR!|Traceback \(most recent call last\)/i;
 const ERROR_OR_FAIL = /\b(?:error|fail(?:ed)?|fatal|critical)\b/i;
 function isExcludedTool(toolName) {
@@ -78,6 +85,55 @@ function collapseConsecutiveDuplicates(lines) {
     }
     return collapsed;
 }
+function listTemplate(line) {
+    return line.trim().replace(/\d+/g, "#").replace(/\s+/g, " ");
+}
+function isStructuredList(text) {
+    const lines = text.split("\n").filter((line) => line.trim().length > 0);
+    if (lines.length < MIN_LIST_ITEMS) {
+        return false;
+    }
+    const prefixHits = lines.filter((line) => LIST_PREFIX.test(line)).length;
+    if (prefixHits / lines.length >= LIST_SIMILARITY_RATIO) {
+        return true;
+    }
+    const counts = new Map();
+    for (const line of lines) {
+        const template = listTemplate(line);
+        counts.set(template, (counts.get(template) ?? 0) + 1);
+    }
+    return Math.max(...counts.values()) / lines.length >= LIST_SIMILARITY_RATIO;
+}
+function tryParseJsonArray(text) {
+    const trimmed = text.trim();
+    if (!trimmed.startsWith("[")) {
+        return undefined;
+    }
+    try {
+        const parsed = JSON.parse(trimmed);
+        return Array.isArray(parsed) ? parsed : undefined;
+    }
+    catch {
+        return undefined;
+    }
+}
+function formatListItem(item) {
+    return typeof item === "string" ? item : JSON.stringify(item);
+}
+function crushStructuredList(items) {
+    const collapsed = collapseConsecutiveDuplicates(items.map(formatListItem));
+    const header = `${items.length} items`;
+    if (collapsed.length <= MAX_LIST_ITEMS) {
+        return [header, ...collapsed].join("\n");
+    }
+    const omitted = collapsed.length - FIRST_LIST_ITEMS - LAST_LIST_ITEMS;
+    return [
+        header,
+        ...collapsed.slice(0, FIRST_LIST_ITEMS),
+        `… ${omitted} more …`,
+        ...collapsed.slice(-LAST_LIST_ITEMS),
+    ].join("\n");
+}
 function crushLog(text) {
     const collapsed = collapseConsecutiveDuplicates(text.split("\n"));
     const keep = new Set();
@@ -100,10 +156,18 @@ function crushLog(text) {
 }
 function visibleCrush(original, hash) {
     const locatorAndHint = `<<compressor:${hash}>>\n${RETRIEVE_HINT}`;
-    if (!isLogShaped(original)) {
-        return locatorAndHint;
+    const jsonItems = tryParseJsonArray(original);
+    if (jsonItems !== undefined && jsonItems.length >= MIN_LIST_ITEMS) {
+        return `${crushStructuredList(jsonItems)}\n${locatorAndHint}`;
     }
-    return `${crushLog(original)}\n${locatorAndHint}`;
+    if (isLogShaped(original)) {
+        return `${crushLog(original)}\n${locatorAndHint}`;
+    }
+    if (isStructuredList(original)) {
+        const lines = original.split("\n").filter((line) => line.trim().length > 0);
+        return `${crushStructuredList(lines)}\n${locatorAndHint}`;
+    }
+    return locatorAndHint;
 }
 function estimateTokens(text) {
     if (text.length === 0) {
