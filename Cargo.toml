@@ -2,22 +2,13 @@
 resolver = "2"
 members = [
     "crates/headroom-core",
-    "crates/headroom-proxy",
-    "crates/headroom-simulators",
-    "crates/headroom-py",
     "crates/headroom-parity",
     "crates/headroom-napi",
 ]
-# headroom-py is a Python extension module — it must be built via maturin, not
-# plain cargo (the "extension-module" feature tells pyo3 not to link libpython,
-# which is required for `import` to work). `cargo build --workspace` without
-# explicit members skips it; `cargo test --workspace` still runs its tests
-# because pyo3 can dynamically link here for the cdylib used by tests.
 default-members = [
     "crates/headroom-core",
-    "crates/headroom-proxy",
-    "crates/headroom-simulators",
     "crates/headroom-parity",
+    "crates/headroom-napi",
 ]
 
 [workspace.package]
