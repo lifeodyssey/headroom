@@ -447,26 +447,252 @@ function crushProse(text: string): string {
     .join("\n");
 }
 
-function visibleCrush(original: string, hash: string): string {
-  const locatorAndHint = `<<compressor:${hash}>>\n${RETRIEVE_HINT}`;
+// Mixed messages: split sections, crush each, one locator for the whole original.
+type SectionKind = "json" | "log" | "list" | "prose" | "other";
+
+type ContentSection = {
+  kind: SectionKind;
+  content: string;
+};
+
+function scanJsonLine(
+  line: string,
+  inString: boolean,
+  escaped: boolean,
+): {
+  bracket: number;
+  brace: number;
+  inString: boolean;
+  escaped: boolean;
+} {
+  let bracket = 0;
+  let brace = 0;
+  for (const char of line) {
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      if (inString) {
+        escaped = true;
+      }
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) {
+      continue;
+    }
+    if (char === "[") {
+      bracket += 1;
+    } else if (char === "]") {
+      bracket -= 1;
+    } else if (char === "{") {
+      brace += 1;
+    } else if (char === "}") {
+      brace -= 1;
+    }
+  }
+  return { bracket, brace, inString, escaped };
+}
+
+function extractJsonBlock(
+  lines: readonly string[],
+  start: number,
+): { text: string; end: number } | undefined {
+  let bracketCount = 0;
+  let braceCount = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < lines.length; i++) {
+    const step = scanJsonLine(lines[i]!, inString, escaped);
+    bracketCount += step.bracket;
+    braceCount += step.brace;
+    inString = step.inString;
+    escaped = step.escaped;
+    if (bracketCount > 0 || braceCount > 0) {
+      continue;
+    }
+    const text = lines.slice(start, i + 1).join("\n");
+    try {
+      JSON.parse(text);
+      return { text, end: i };
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+function lineKind(line: string): SectionKind | "blank" {
+  if (line.trim().length === 0) {
+    return "blank";
+  }
+  if (LIST_PREFIX.test(line)) {
+    return "list";
+  }
+  if (LOG_LINE_PATTERN.test(line)) {
+    return "log";
+  }
+  if (textHasCjk(line)) {
+    return "prose";
+  }
+  return "other";
+}
+
+function refineKind(content: string): SectionKind {
+  const jsonItems = tryParseJsonArray(content);
+  if (jsonItems !== undefined && jsonItems.length >= MIN_LIST_ITEMS) {
+    return "json";
+  }
+  if (isLogShaped(content)) {
+    return "log";
+  }
+  if (isStructuredList(content)) {
+    return "list";
+  }
+  if (
+    textHasCjk(content) &&
+    splitProseSegments(content).length >= MIN_PROSE_SEGMENTS
+  ) {
+    return "prose";
+  }
+  return "other";
+}
+
+function crushSection(section: ContentSection): string {
+  if (section.kind === "json") {
+    const jsonItems = tryParseJsonArray(section.content);
+    if (jsonItems !== undefined) {
+      return crushStructuredList(jsonItems);
+    }
+  }
+  if (section.kind === "log") {
+    return crushLog(section.content);
+  }
+  if (section.kind === "list") {
+    const lines = section.content
+      .split("\n")
+      .filter((line) => line.trim().length > 0);
+    return crushStructuredList(lines);
+  }
+  if (section.kind === "prose") {
+    return crushProse(section.content);
+  }
+  return section.content;
+}
+
+function splitTextRun(text: string): ContentSection[] {
+  const groups: { kind: SectionKind; lines: string[] }[] = [];
+  for (const line of text.split("\n")) {
+    const kind = lineKind(line);
+    const last = groups[groups.length - 1];
+    if (kind === "blank") {
+      if (last !== undefined) {
+        last.lines.push(line);
+      }
+      continue;
+    }
+    if (last === undefined) {
+      groups.push({ kind, lines: [line] });
+      continue;
+    }
+    if (last.kind === "other" && kind !== "other") {
+      last.kind = kind;
+      last.lines.push(line);
+      continue;
+    }
+    if (kind === "other" || kind === last.kind) {
+      last.lines.push(line);
+      continue;
+    }
+    groups.push({ kind, lines: [line] });
+  }
+
+  const sections: ContentSection[] = [];
+  for (const group of groups) {
+    const content = group.lines.join("\n").trim();
+    if (content.length === 0) {
+      continue;
+    }
+    sections.push({ kind: refineKind(content), content });
+  }
+  return sections;
+}
+
+function splitIntoSections(content: string): ContentSection[] {
+  const lines = content.split("\n");
+  const sections: ContentSection[] = [];
+  let textStart = 0;
+  let index = 0;
+
+  const flushText = (end: number): void => {
+    if (end <= textStart) {
+      return;
+    }
+    const text = lines.slice(textStart, end).join("\n");
+    if (text.trim().length === 0) {
+      return;
+    }
+    sections.push(...splitTextRun(text));
+  };
+
+  while (index < lines.length) {
+    const trimmed = lines[index]!.trim();
+    if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
+      const extracted = extractJsonBlock(lines, index);
+      if (extracted !== undefined) {
+        flushText(index);
+        sections.push({
+          kind: refineKind(extracted.text),
+          content: extracted.text,
+        });
+        index = extracted.end + 1;
+        textStart = index;
+        continue;
+      }
+    }
+    index += 1;
+  }
+  flushText(lines.length);
+  return sections;
+}
+
+function crushSingle(original: string): string {
   const jsonItems = tryParseJsonArray(original);
   if (jsonItems !== undefined && jsonItems.length >= MIN_LIST_ITEMS) {
-    return `${crushStructuredList(jsonItems)}\n${locatorAndHint}`;
+    return crushStructuredList(jsonItems);
   }
   if (isLogShaped(original)) {
-    return `${crushLog(original)}\n${locatorAndHint}`;
+    return crushLog(original);
   }
   if (isStructuredList(original)) {
     const lines = original.split("\n").filter((line) => line.trim().length > 0);
-    return `${crushStructuredList(lines)}\n${locatorAndHint}`;
+    return crushStructuredList(lines);
   }
   if (textHasCjk(original)) {
-    const crushed = crushProse(original);
-    if (crushed.length > 0) {
-      return `${crushed}\n${locatorAndHint}`;
-    }
+    return crushProse(original);
   }
-  return locatorAndHint;
+  return "";
+}
+
+function visibleCrush(original: string, hash: string): string {
+  const locatorAndHint = `<<compressor:${hash}>>\n${RETRIEVE_HINT}`;
+  const sections = splitIntoSections(original);
+  const crushable = new Set(
+    sections.map((section) => section.kind).filter((kind) => kind !== "other"),
+  );
+  const visible =
+    crushable.size >= 2
+      ? sections
+          .map((section) => crushSection(section))
+          .filter((part) => part.length > 0)
+          .join("\n\n")
+      : crushSingle(original);
+  return visible.length > 0 ? `${visible}\n${locatorAndHint}` : locatorAndHint;
 }
 
 function estimateTokens(text: string): number {

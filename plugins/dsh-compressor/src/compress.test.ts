@@ -59,6 +59,38 @@ function withProtectedTail(
   return [...messages, ...PROTECTED_TAIL];
 }
 
+function mixedLogListCjk(): string {
+  const logLines = ["===== test session starts ====="];
+  for (let i = 0; i < 80; i++) {
+    logLines.push(`INFO compiling unit ${i} ok`);
+  }
+  for (let i = 0; i < 15; i++) {
+    logLines.push("FAIL compilation unit failed with diagnostics");
+  }
+  logLines.push("ERROR cannot find symbol Foo");
+  logLines.push("INFO compiling leftover unit ok");
+  logLines.push("===== 1 failed, 80 passed =====");
+
+  const list = Array.from(
+    { length: 80 },
+    (_, index) =>
+      `- file src/module-${index}.ts size=${1000 + index} hash=abc${index}`,
+  ).join("\n");
+
+  const filler = Array.from(
+    { length: 24 },
+    (_, index) =>
+      `第${index}号监控服务器的日志显示子系统今天运行平稳没有出现异常。`,
+  ).join("");
+  const needle =
+    "认证令牌的缓存采用最近最少使用淘汰算法。" +
+    "parseConfig 在端口 8080 请求 https://example.com/auth 时返回 ERROR。" +
+    "详见《认证令牌规范》。";
+  const prose = `${filler.slice(0, filler.length / 2)}${needle}${filler.slice(filler.length / 2)}`;
+
+  return `${logLines.join("\n")}\n\n${list}\n\n${prose}`;
+}
+
 describe("compressConversation", () => {
   it("leaves every message unchanged", () => {
     const messages = [
@@ -583,5 +615,56 @@ describe("compressConversation", () => {
       }
     }
     expect(retrieve(crushed, { storeDir })).toBe(payload);
+  });
+
+  it("crushes mixed log, structured list, and CJK sections with matching styles", () => {
+    const storeDir = tempStore();
+    const payload = mixedLogListCjk();
+    const messages = withProtectedTail([
+      { role: "tool" as const, content: payload, toolName: "bash" },
+    ]);
+
+    const compressed = compressConversation(messages, { storeDir });
+    const crushed = compressed[0]?.content ?? "";
+
+    expect(compressed[0]?.compressed).toBe(true);
+    expect(crushed.length).toBeLessThan(payload.length);
+    expect(crushed).toMatch(/FAIL compilation unit failed with diagnostics/);
+    expect(crushed).toMatch(/ERROR cannot find symbol Foo/);
+    expect(crushed).toMatch(/===== 1 failed, 80 passed =====/);
+    expect(
+      crushed.split("FAIL compilation unit failed with diagnostics").length - 1,
+    ).toBeLessThan(4);
+    expect(crushed).not.toMatch(/INFO compiling unit 0 ok/);
+    expect(crushed).toMatch(/80 items/);
+    expect(crushed).toMatch(/module-0/);
+    expect(crushed).toMatch(/module-79/);
+    expect(crushed).not.toMatch(/module-40/);
+    expect(crushed).toMatch(/8080/);
+    expect(crushed).toMatch(/parseConfig/);
+    expect(crushed).toMatch(/https:\/\/example\.com\/auth/);
+    expect(crushed).toMatch(/认证令牌规范/);
+    expect(crushed).not.toMatch(/第12号监控服务器/);
+    expect(crushed).toMatch(/<<compressor:[0-9a-f]{64}>>/);
+    expect(crushed).toContain(RETRIEVE_HINT);
+    expect(crushed.match(/<<compressor:[0-9a-f]{64}>>/g)).toHaveLength(1);
+    expect(retrieve(crushed, { storeDir })).toBe(payload);
+    expect(readdirSync(storeDir)).toHaveLength(1);
+  });
+
+  it("still applies skip policy to mixed log, list, and CJK content", () => {
+    const storeDir = tempStore();
+    const payload = mixedLogListCjk();
+    const messages = [
+      { role: "user" as const, content: payload },
+      { role: "tool" as const, content: payload, toolName: "Read" },
+      { role: "tool" as const, content: payload, toolName: "bash" },
+      { role: "assistant" as const, content: payload },
+      { role: "system" as const, content: payload },
+      { role: "tool" as const, content: payload, toolName: "bash" },
+    ];
+
+    expect(compressConversation(messages, { storeDir })).toEqual(messages);
+    expect(readdirSync(storeDir)).toEqual([]);
   });
 });
