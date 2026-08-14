@@ -470,8 +470,32 @@ fn shingles(words: &[String], k: usize) -> HashSet<String> {
 
 /// A word carries specific, hard-to-reconstruct information if it has a digit,
 /// is an error/status keyword, is ALLCAPS (2+ letters), or is a dotted
-/// identifier (`foo.bar`).
+/// identifier (`foo.bar`). It is also salient if it is a "do-not-drop" anchor
+/// that agent workflows depend on: a CLI flag (`-v`, `--verbose`), an absolute
+/// path (`/etc/nginx`, `~/notes`), or a URL (`https://...`). The anchor checks
+/// are deliberately narrow to avoid making ordinary English words salient.
 fn is_salient(word: &str) -> bool {
+    // Cheapest first: single-byte prefix peeks, no allocation or full scan.
+
+    // CLI flag: `-v`, `--verbose`. Requires an alphabetic char so a bare
+    // `-`/`--` (or a stray dash) is not treated as an anchor. Hyphenated
+    // English like `well-known` does not start with `-`, so it is unaffected.
+    if word.starts_with('-') && word.chars().any(|c| c.is_ascii_alphabetic()) {
+        return true;
+    }
+
+    // Absolute path: `/etc/nginx`, `~/notes.md`. The length guard rejects a
+    // lone `/`. Relative tokens (`src/main`, `and/or`) don't start with `/`
+    // or `~/`, so they stay non-salient.
+    if (word.starts_with('/') || word.starts_with("~/")) && word.chars().count() > 1 {
+        return true;
+    }
+
+    // URL: any scheme-bearing token (`http://`, `https://`, `ws://`, ...).
+    if word.contains("://") {
+        return true;
+    }
+
     if word.chars().any(|c| c.is_ascii_digit()) {
         return true;
     }
@@ -656,6 +680,61 @@ mod tests {
         );
         assert!(r.compressed_tokens < r.original_tokens);
         assert!(r.compression_ratio > 0.0 && r.compression_ratio <= 1.0);
+    }
+
+    #[test]
+    fn anchors_are_salient() {
+        // URLs, CLI flags, and absolute paths are "do-not-drop" anchors.
+        assert!(is_salient("https://example.com/x"));
+        assert!(is_salient("--verbose"));
+        assert!(is_salient("-v"));
+        assert!(is_salient("/etc/nginx/nginx.conf"));
+        assert!(is_salient("~/notes.md"));
+    }
+
+    #[test]
+    fn anchor_rules_do_not_over_keep() {
+        // Ordinary/relative tokens must stay non-salient (no over-keeping).
+        assert!(!is_salient("and/or")); // no leading '/'
+        assert!(!is_salient("well-known")); // does not start with '-'
+        assert!(!is_salient("hello"));
+        assert!(!is_salient("the"));
+        assert!(!is_salient("-")); // bare dash, no alphabetic char
+        assert!(!is_salient("/")); // lone slash
+        assert!(!is_salient("src/main")); // relative path: no leading '/', no dot
+    }
+
+    #[test]
+    fn anchor_sentence_survives_aggressive_compression() {
+        // 40 anchor-free filler sentences of similar length/recency, with a
+        // single middle sentence carrying an absolute-path anchor. Under
+        // aggressive compression the anchor sentence must survive while a
+        // comparable filler sentence is dropped. Deterministic input.
+        let anchor_idx = 20;
+        let content = (0..40)
+            .map(|i| {
+                if i == anchor_idx {
+                    format!("Config value alpha bravo lives in /etc/service/config number {i}.")
+                } else {
+                    format!("Config value alpha bravo charlie delta echo foxtrot golf number {i}.")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        let r = TextCrusher::default().compress(&content, "", Some(0.3));
+        assert!(r.compressed_tokens < r.original_tokens, "must compress");
+        assert!(
+            r.compressed.contains("/etc/service/config"),
+            "anchor-bearing sentence must survive: {}",
+            r.compressed
+        );
+        // A comparable filler sentence far from the anchor is dropped, so the
+        // anchor's survival is due to salience, not wholesale retention.
+        assert!(
+            !r.compressed.contains("number 3."),
+            "a comparable filler sentence should be dropped: {}",
+            r.compressed
+        );
     }
 
     #[test]
