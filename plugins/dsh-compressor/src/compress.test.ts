@@ -45,7 +45,6 @@ const LONG_HASH =
 const LONG_LOCATOR = `<<compressor:${LONG_HASH}>>`;
 const RETRIEVE_HINT =
   "Call compressor_retrieve with this locator or its hash to restore the original. This is not a filesystem path.";
-const STUB_CRUSHED = `${LONG_LOCATOR}\n${RETRIEVE_HINT}`;
 
 const PROTECTED_TAIL: ConversationMessage[] = [
   { role: "assistant", content: "tail-1" },
@@ -95,15 +94,15 @@ describe("compressConversation", () => {
 
     const compressed = compressConversation(messages, { storeDir });
 
-    expect(compressed).toEqual([
-      {
-        role: "tool",
-        toolName: "bash",
-        compressed: true,
-        content: STUB_CRUSHED,
-      },
-      ...PROTECTED_TAIL,
-    ]);
+    expect(compressed[0]).toMatchObject({
+      role: "tool",
+      toolName: "bash",
+      compressed: true,
+    });
+    expect(compressed[0]?.content).toContain(LONG_LOCATOR);
+    expect(compressed[0]?.content).toContain(RETRIEVE_HINT);
+    expect(compressed[0]?.content.length).toBeLessThan(LONG_ORIGINAL.length);
+    expect(compressed.slice(1)).toEqual(PROTECTED_TAIL);
     expect(readdirSync(storeDir)).toEqual([LONG_HASH]);
     expect(readFileSync(join(storeDir, LONG_HASH), "utf8")).toBe(LONG_ORIGINAL);
   });
@@ -175,8 +174,9 @@ describe("compressConversation", () => {
       { storeDir },
     );
 
-    expect(compressed.content).toBe(STUB_CRUSHED);
-    expect(compressed.content).toMatch(/^<<compressor:[0-9a-f]{64}>>\n/);
+    expect(compressed.content).toContain(LONG_LOCATOR);
+    expect(compressed.content).toContain(RETRIEVE_HINT);
+    expect(compressed.content).toMatch(/<<compressor:[0-9a-f]{64}>>/);
     expect(compressed.content).not.toMatch(/[/\\]/);
     expect(compressed.content).not.toMatch(/(?:^|[\s])(?:~|\.{0,2}\/)/);
     expect(retrieve(compressed.content, { storeDir })).toBe(LONG_ORIGINAL);
@@ -193,7 +193,8 @@ describe("compressConversation", () => {
         ]),
       );
 
-      expect(compressed[0]?.content).toBe(STUB_CRUSHED);
+      expect(compressed[0]?.content).toContain(LONG_LOCATOR);
+      expect(compressed[0]?.content).toContain(RETRIEVE_HINT);
       expect(readFileSync(join(home, "dsh-compressor", LONG_HASH), "utf8")).toBe(
         LONG_ORIGINAL,
       );
@@ -226,11 +227,11 @@ describe("compressConversation", () => {
 
     const compressed = compressConversation(messages, { storeDir });
 
-    expect(compressed.map((message) => message.content)).toEqual([
-      STUB_CRUSHED,
-      STUB_CRUSHED,
-      ...PROTECTED_TAIL.map((message) => message.content),
-    ]);
+    expect(compressed[0]?.content).toContain(LONG_LOCATOR);
+    expect(compressed[1]?.content).toBe(compressed[0]?.content);
+    expect(compressed.slice(2).map((message) => message.content)).toEqual(
+      PROTECTED_TAIL.map((message) => message.content),
+    );
     expect(readdirSync(storeDir)).toEqual([LONG_HASH]);
   });
 
@@ -296,12 +297,11 @@ describe("compressConversation", () => {
 
     const compressed = compressConversation(messages, { storeDir });
 
-    expect(compressed[0]).toEqual({
-      role: "system",
-      compressed: true,
-      content: STUB_CRUSHED,
-    });
-    expect(retrieve(STUB_CRUSHED, { storeDir })).toBe(LONG_ORIGINAL);
+    expect(compressed[0]?.role).toBe("system");
+    expect(compressed[0]?.compressed).toBe(true);
+    expect(compressed[0]?.content).toContain(LONG_LOCATOR);
+    expect(compressed[0]?.content).toContain(RETRIEVE_HINT);
+    expect(retrieve(compressed[0]?.content, { storeDir })).toBe(LONG_ORIGINAL);
   });
 
   it("does not nest an already-marked compressed message into another locator", () => {
@@ -321,20 +321,50 @@ describe("compressConversation", () => {
 
   it("leaves a message as-is when a locator would not shrink it", () => {
     const storeDir = tempStore();
-    const originals = withProtectedTail([
-      { role: "tool" as const, content: LONG_ORIGINAL, toolName: "bash" },
-      { role: "system" as const, content: "x".repeat(1000) },
+    const compactLog = Array.from(
+      { length: 8 },
+      (_, index) => `FAIL compilation unit ${index} failed ${"n".repeat(160)}`,
+    ).join("\n");
+    const messages = withProtectedTail([
+      { role: "tool" as const, content: compactLog, toolName: "bash" },
     ]);
 
-    const compressed = compressConversation(originals, { storeDir });
+    expect(compressConversation(messages, { storeDir })).toEqual(messages);
+    expect(readdirSync(storeDir)).toEqual([]);
+  });
 
-    for (const [index, message] of compressed.entries()) {
-      expect(message.content.length).toBeLessThanOrEqual(
-        originals[index]!.content.length,
-      );
+  it("crushes a long log to a readable extract plus a locator", () => {
+    const storeDir = tempStore();
+    const logLines = ["===== test session starts ====="];
+    for (let i = 0; i < 80; i++) {
+      logLines.push(`INFO compiling unit ${i} ok`);
     }
-    expect(compressed[0]?.content.length).toBeLessThan(LONG_ORIGINAL.length);
-    expect(compressed[1]?.content.length).toBeLessThan(1000);
+    for (let i = 0; i < 15; i++) {
+      logLines.push("FAIL compilation unit failed with diagnostics");
+    }
+    logLines.push("ERROR cannot find symbol Foo");
+    logLines.push("INFO compiling leftover unit ok");
+    logLines.push("===== 1 failed, 80 passed =====");
+    const log = logLines.join("\n");
+    const messages = withProtectedTail([
+      { role: "tool" as const, content: log, toolName: "bash" },
+    ]);
+
+    const compressed = compressConversation(messages, { storeDir });
+    const crushed = compressed[0]?.content ?? "";
+
+    expect(compressed[0]?.compressed).toBe(true);
+    expect(crushed.length).toBeLessThan(log.length);
+    expect(crushed).toMatch(/FAIL compilation unit failed with diagnostics/);
+    expect(crushed).toMatch(/ERROR cannot find symbol Foo/);
+    expect(crushed).toMatch(/===== 1 failed, 80 passed =====/);
+    expect(crushed.split("FAIL compilation unit failed with diagnostics").length - 1).toBeLessThan(
+      4,
+    );
+    expect(crushed).not.toMatch(/INFO compiling unit 0 ok/);
+    expect(crushed).toMatch(/<<compressor:[0-9a-f]{64}>>/);
+    expect(crushed).toContain(RETRIEVE_HINT);
+    expect(retrieve(crushed, { storeDir })).toBe(log);
   });
 
   it("never compresses the last four messages", () => {

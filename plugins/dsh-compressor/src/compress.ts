@@ -55,6 +55,16 @@ const DEFAULT_EXCLUDE_TOOLS = new Set([
 const LOCATOR_PATTERN = /<<compressor:([0-9a-f]{64})>>/;
 const BARE_HASH_PATTERN = /^[0-9a-f]{64}$/;
 
+// Slim extractive log crush: errors/FAIL, last lines, collapse consecutive dups.
+const MIN_LOG_LINES = 8;
+const LOG_PATTERN_RATIO = 0.1;
+const MAX_ERROR_LINES = 20;
+const LAST_LOG_LINES = 8;
+const MAX_LOG_LINES = 40;
+const LOG_LINE_PATTERN =
+  /\b(?:error|fail(?:ed)?|fatal|critical|warn(?:ing)?|info|debug|trace|passed|skipped)\b|^\s*\d{4}-\d{2}-\d{2}|^\s*\[\d{2}:\d{2}:\d{2}\]|^={3,}|^-{3,}|^npm ERR!|Traceback \(most recent call last\)/i;
+const ERROR_OR_FAIL = /\b(?:error|fail(?:ed)?|fatal|critical)\b/i;
+
 function isExcludedTool(toolName: string | undefined): boolean {
   return toolName !== undefined && DEFAULT_EXCLUDE_TOOLS.has(toolName.toLowerCase());
 }
@@ -70,6 +80,59 @@ function isCjkCodePoint(codePoint: number): boolean {
     (codePoint >= 0xff00 && codePoint <= 0xffef) ||
     (codePoint >= 0x20000 && codePoint <= 0x2a6df)
   );
+}
+
+function isLogShaped(text: string): boolean {
+  const nonEmpty = text.split("\n").filter((line) => line.trim().length > 0);
+  if (nonEmpty.length < MIN_LOG_LINES) {
+    return false;
+  }
+  const matches = nonEmpty.filter((line) => LOG_LINE_PATTERN.test(line)).length;
+  return matches / nonEmpty.length >= LOG_PATTERN_RATIO;
+}
+
+function collapseConsecutiveDuplicates(lines: readonly string[]): string[] {
+  const collapsed: string[] = [];
+  let index = 0;
+  while (index < lines.length) {
+    const line = lines[index]!;
+    let count = 1;
+    while (index + count < lines.length && lines[index + count] === line) {
+      count += 1;
+    }
+    collapsed.push(count > 1 ? `${line} (×${count})` : line);
+    index += count;
+  }
+  return collapsed;
+}
+
+function crushLog(text: string): string {
+  const collapsed = collapseConsecutiveDuplicates(text.split("\n"));
+  const keep = new Set<number>();
+  let errors = 0;
+  for (let i = 0; i < collapsed.length; i++) {
+    if (errors < MAX_ERROR_LINES && ERROR_OR_FAIL.test(collapsed[i]!)) {
+      keep.add(i);
+      errors += 1;
+    }
+  }
+  const tailStart = Math.max(0, collapsed.length - LAST_LOG_LINES);
+  for (let i = tailStart; i < collapsed.length; i++) {
+    keep.add(i);
+  }
+  return [...keep]
+    .sort((a, b) => a - b)
+    .slice(0, MAX_LOG_LINES)
+    .map((i) => collapsed[i]!)
+    .join("\n");
+}
+
+function visibleCrush(original: string, hash: string): string {
+  const locatorAndHint = `<<compressor:${hash}>>\n${RETRIEVE_HINT}`;
+  if (!isLogShaped(original)) {
+    return locatorAndHint;
+  }
+  return `${crushLog(original)}\n${locatorAndHint}`;
 }
 
 function estimateTokens(text: string): number {
@@ -136,7 +199,7 @@ export function compressConversation(
     }
 
     const hash = contentHash(message.content);
-    const crushed = `<<compressor:${hash}>>\n${RETRIEVE_HINT}`;
+    const crushed = visibleCrush(message.content, hash);
     if (crushed.length >= message.content.length) {
       return { ...message };
     }
