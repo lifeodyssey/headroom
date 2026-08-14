@@ -137,6 +137,32 @@ function mixedLogListCjk(): string {
   return `${logLines.join("\n")}\n\n${list}\n\n${prose}`;
 }
 
+function officialMixedPayload(): string {
+  const prose = Array.from(
+    { length: 20 },
+    (_, index) =>
+      `First sentence has enough words to count in paragraph ${index} with extra padding text.`,
+  ).join("\n");
+  const code = [
+    "```python",
+    "def unique_marker_function():",
+    "    return 'keep-this-code-verbatim-xyz'",
+    "```",
+  ].join("\n");
+  const items = Array.from({ length: 80 }, (_, index) => ({
+    id: index,
+    name: `record-${index}`,
+    status: index === 79 ? "error" : "ok",
+    detail: `payload field for record ${index} with extra padding text`,
+  }));
+  const json = JSON.stringify(items, null, 2);
+  const search = Array.from(
+    { length: 80 },
+    (_, index) => `src/app.py:${index}:print('hit-${index}')`,
+  ).join("\n");
+  return `${prose}\n${code}\n${json}\n${search}`;
+}
+
 describe("compressConversation", () => {
   it("leaves every message unchanged", () => {
     const messages = [
@@ -725,6 +751,34 @@ describe("compressConversation", () => {
     expect(compressed[5]?.compressed).toBe(true);
     expect(compressed[5]?.content.length).toBeLessThan(payload.length);
     expect(retrieve(compressed[2]?.content, { storeDir })).toBe(payload);
+    expect(readdirSync(storeDir)).toHaveLength(1);
+  });
+
+  it("crushes mixed sections independently and restores the whole original", () => {
+    const storeDir = tempStore();
+    const payload = officialMixedPayload();
+    const messages = withProtectedTail([
+      { role: "tool" as const, content: payload, toolName: "bash" },
+    ]);
+
+    const compressed = compressConversation(messages, { storeDir });
+    const crushed = compressed[0]?.content ?? "";
+
+    expect(compressed[0]?.compressed).toBe(true);
+    expect(crushed.length).toBeLessThan(payload.length);
+    expect(crushed).toContain("```python");
+    expect(crushed).toContain("def unique_marker_function():");
+    expect(crushed).toContain("keep-this-code-verbatim-xyz");
+    expect(crushed).toMatch(/record-0/);
+    expect(crushed).toMatch(/record-79/);
+    expect(crushed).not.toMatch(/record-40/);
+    expect(crushed).toMatch(/hit-0/);
+    expect(crushed).toMatch(/hit-79/);
+    expect(crushed).not.toMatch(/hit-40/);
+    expect(crushed).toMatch(/<<compressor:[0-9a-f]{64}>>/);
+    expect(crushed).toContain(RETRIEVE_HINT);
+    expect(crushed.match(/<<compressor:[0-9a-f]{64}>>/g)).toHaveLength(1);
+    expect(retrieve(crushed, { storeDir })).toBe(payload);
     expect(readdirSync(storeDir)).toHaveLength(1);
   });
 });

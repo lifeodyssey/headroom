@@ -3,6 +3,11 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import {
+  isMixedContent,
+  splitIntoSections,
+  type ContentSection,
+} from "./mixed-content.js";
 import { crushByDetectedType, detectContentType, nativeAvailable } from "./native.js";
 
 export type MessageRole = "user" | "assistant" | "system" | "tool";
@@ -156,12 +161,42 @@ function warnMissingNative(): void {
   );
 }
 
+function crushSection(section: ContentSection, query: string): string {
+  // Code-aware is off; fence bodies stay verbatim.
+  const crushed =
+    section.contentType === "source_code"
+      ? section.content
+      : crushByDetectedType(section.content, query).compressed;
+  if (section.isCodeFence && section.language) {
+    return `\`\`\`${section.language}\n${crushed}\n\`\`\``;
+  }
+  return crushed;
+}
+
+function crushMixed(original: string, query: string): string {
+  const sections = splitIntoSections(original);
+  if (sections.length === 0) {
+    return crushByDetectedType(original, query).compressed;
+  }
+  return sections.map((section) => crushSection(section, query)).join("\n\n");
+}
+
 function visibleCrush(original: string, hash: string, query = ""): string {
   if (!nativeAvailable()) {
     warnMissingNative();
     return original;
   }
-  const crushed = crushByDetectedType(original, query).compressed;
+  let crushed: string;
+  if (isMixedContent(original)) {
+    crushed = crushMixed(original, query);
+    // Mixed split can be a no-op (or grow via "\n\n" joins) on a 2-line
+    // run_code JSON blob. Whole-blob detect still gets log no-op → Text.
+    if (crushed.length >= original.length) {
+      crushed = crushByDetectedType(original, query).compressed;
+    }
+  } else {
+    crushed = crushByDetectedType(original, query).compressed;
+  }
   const locatorAndHint = `<<compressor:${hash}>>\n${RETRIEVE_HINT}`;
   if (crushed.length === 0) {
     return locatorAndHint;

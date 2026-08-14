@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { isMixedContent, splitIntoSections, } from "./mixed-content.js";
 import { crushByDetectedType, detectContentType, nativeAvailable } from "./native.js";
 // Official ContentRouter defaults (Kompress and code-aware stay off).
 const PROTECT_RECENT_CODE = 4;
@@ -117,12 +118,40 @@ function warnMissingNative() {
     loggedMissingNative = true;
     console.error(`dsh-compressor: native addon unavailable (${process.platform}-${process.arch}); leaving content unchanged`);
 }
+function crushSection(section, query) {
+    // Code-aware is off; fence bodies stay verbatim.
+    const crushed = section.contentType === "source_code"
+        ? section.content
+        : crushByDetectedType(section.content, query).compressed;
+    if (section.isCodeFence && section.language) {
+        return `\`\`\`${section.language}\n${crushed}\n\`\`\``;
+    }
+    return crushed;
+}
+function crushMixed(original, query) {
+    const sections = splitIntoSections(original);
+    if (sections.length === 0) {
+        return crushByDetectedType(original, query).compressed;
+    }
+    return sections.map((section) => crushSection(section, query)).join("\n\n");
+}
 function visibleCrush(original, hash, query = "") {
     if (!nativeAvailable()) {
         warnMissingNative();
         return original;
     }
-    const crushed = crushByDetectedType(original, query).compressed;
+    let crushed;
+    if (isMixedContent(original)) {
+        crushed = crushMixed(original, query);
+        // Mixed split can be a no-op (or grow via "\n\n" joins) on a 2-line
+        // run_code JSON blob. Whole-blob detect still gets log no-op → Text.
+        if (crushed.length >= original.length) {
+            crushed = crushByDetectedType(original, query).compressed;
+        }
+    }
+    else {
+        crushed = crushByDetectedType(original, query).compressed;
+    }
     const locatorAndHint = `<<compressor:${hash}>>\n${RETRIEVE_HINT}`;
     if (crushed.length === 0) {
         return locatorAndHint;
