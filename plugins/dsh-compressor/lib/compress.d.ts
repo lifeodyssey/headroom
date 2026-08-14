@@ -5,4 +5,8 @@ export type ConversationMessage = {
     toolName?: string;
     compressed?: boolean;
 };
-export declare function compressConversation(messages: readonly ConversationMessage[]): ConversationMessage[];
+export type CompressOptions = {
+    storeDir?: string;
+};
+export declare function retrieve(locatorOrHash: string, options?: CompressOptions): string;
+export declare function compressConversation(messages: readonly ConversationMessage[], options?: CompressOptions): ConversationMessage[];
