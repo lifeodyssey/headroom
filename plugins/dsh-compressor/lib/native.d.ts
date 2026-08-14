@@ -13,6 +13,7 @@ export type DetectOut = {
     confidence: number;
     metadataJson: string;
 };
+export declare function nativeFileName(platform?: string, arch?: string): string;
 export declare function nativeAvailable(): boolean;
 export declare function crushLog(content: string, config?: Record<string, unknown>, bias?: number): CrushOut;
 export declare function crushSmart(content: string, query?: string, bias?: number, config?: Record<string, unknown>, withoutCompaction?: boolean): CrushOut;

@@ -53,9 +53,10 @@ type NativeBinding = {
 
 const require = createRequire(import.meta.url);
 
-function nativeFileName(): string {
-  const platform = process.platform;
-  const arch = process.arch;
+export function nativeFileName(
+  platform: string = process.platform,
+  arch: string = process.arch,
+): string {
   if (platform === "darwin" && arch === "arm64") {
     return "dsh-compressor.darwin-arm64.node";
   }

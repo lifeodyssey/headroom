@@ -22,6 +22,13 @@ const triples = [
   {
     file: "dsh-compressor.linux-x64-gnu.node",
     candidates: [
+      join(
+        root,
+        "target",
+        "x86_64-unknown-linux-gnu",
+        "release",
+        "libdsh_compressor_native.so",
+      ),
       join(root, "target", "release", "libdsh_compressor_native.so"),
     ],
   },

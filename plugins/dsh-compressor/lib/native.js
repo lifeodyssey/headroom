@@ -2,9 +2,7 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 const require = createRequire(import.meta.url);
-function nativeFileName() {
-    const platform = process.platform;
-    const arch = process.arch;
+export function nativeFileName(platform = process.platform, arch = process.arch) {
     if (platform === "darwin" && arch === "arm64") {
         return "dsh-compressor.darwin-arm64.node";
     }
