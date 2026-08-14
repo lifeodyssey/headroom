@@ -1,0 +1,24 @@
+[package]
+name = "headroom-napi"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "N-API bindings exposing headroom-core crushers to the DSH plugin."
+
+[lib]
+crate-type = ["cdylib"]
+name = "dsh_compressor_native"
+test = false
+doctest = false
+bench = false
+
+[dependencies]
+headroom-core = { path = "../headroom-core", default-features = false }
+napi = { version = "2.16", default-features = false, features = ["napi8", "serde-json"] }
+napi-derive = "2.16"
+serde_json = { workspace = true }
+
+[build-dependencies]
+napi-build = "2.1"

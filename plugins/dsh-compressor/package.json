@@ -14,10 +14,12 @@
   },
   "files": [
     "lib",
+    "native",
     "cordis.patch.yml"
   ],
   "scripts": {
     "build": "tsc",
+    "build:native": "cargo build -p headroom-napi --release && node scripts/copy-native.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"

@@ -3,6 +3,8 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { crushByDetectedType, nativeAvailable } from "./native.js";
+
 export type MessageRole = "user" | "assistant" | "system" | "tool";
 
 export type ConversationMessage = {
@@ -679,8 +681,30 @@ function crushSingle(original: string): string {
   return "";
 }
 
-function visibleCrush(original: string, hash: string): string {
+function lastUserQuery(
+  messages: readonly ConversationMessage[],
+  index: number,
+): string {
+  for (let i = index - 1; i >= 0; i--) {
+    if (messages[i]?.role === "user") {
+      return messages[i]!.content;
+    }
+  }
+  return "";
+}
+
+function visibleCrush(original: string, hash: string, query = ""): string {
   const locatorAndHint = `<<compressor:${hash}>>\n${RETRIEVE_HINT}`;
+  if (nativeAvailable()) {
+    const crushed = crushByDetectedType(original, query).compressed;
+    if (crushed.length === 0) {
+      return locatorAndHint;
+    }
+    if (crushed === original) {
+      return original;
+    }
+    return `${crushed}\n${locatorAndHint}`;
+  }
   const sections = splitIntoSections(original);
   const crushable = new Set(
     sections.map((section) => section.kind).filter((kind) => kind !== "other"),
@@ -759,7 +783,11 @@ export function compressConversation(
     }
 
     const hash = contentHash(message.content);
-    const crushed = visibleCrush(message.content, hash);
+    const crushed = visibleCrush(
+      message.content,
+      hash,
+      lastUserQuery(messages, index),
+    );
     if (crushed.length >= message.content.length) {
       return { ...message };
     }

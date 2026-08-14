@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { crushByDetectedType, nativeAvailable } from "./native.js";
 // Headroom coding-agent defaults: skip user turns; protect the live tail;
 // skip messages under about 250 tokens.
 const PROTECT_RECENT = 4;
@@ -587,8 +588,26 @@ function crushSingle(original) {
     }
     return "";
 }
-function visibleCrush(original, hash) {
+function lastUserQuery(messages, index) {
+    for (let i = index - 1; i >= 0; i--) {
+        if (messages[i]?.role === "user") {
+            return messages[i].content;
+        }
+    }
+    return "";
+}
+function visibleCrush(original, hash, query = "") {
     const locatorAndHint = `<<compressor:${hash}>>\n${RETRIEVE_HINT}`;
+    if (nativeAvailable()) {
+        const crushed = crushByDetectedType(original, query).compressed;
+        if (crushed.length === 0) {
+            return locatorAndHint;
+        }
+        if (crushed === original) {
+            return original;
+        }
+        return `${crushed}\n${locatorAndHint}`;
+    }
     const sections = splitIntoSections(original);
     const crushable = new Set(sections.map((section) => section.kind).filter((kind) => kind !== "other"));
     const visible = crushable.size >= 2
@@ -655,7 +674,7 @@ export function compressConversation(messages, options) {
             return { ...message };
         }
         const hash = contentHash(message.content);
-        const crushed = visibleCrush(message.content, hash);
+        const crushed = visibleCrush(message.content, hash, lastUserQuery(messages, index));
         if (crushed.length >= message.content.length) {
             return { ...message };
         }
