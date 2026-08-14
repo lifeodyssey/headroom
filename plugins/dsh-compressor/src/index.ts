@@ -2,8 +2,11 @@ import {
   compressConversation,
   retrieve,
   type ConversationMessage,
-  type MessageRole,
 } from "./compress.js";
+import {
+  rewriteSessionToolResults,
+  type SurfaceSession,
+} from "./session-rewrite.js";
 
 export {
   compressConversation,
@@ -26,8 +29,6 @@ const POST_EXECUTE_TAIL: ConversationMessage[] = [
   { role: "assistant", content: "tail-3" },
   { role: "assistant", content: "tail-4" },
 ];
-
-const ROLES = new Set<MessageRole>(["user", "assistant", "system", "tool"]);
 
 type RetrieveArgs = {
   locator: string;
@@ -60,27 +61,6 @@ type PluginContext = {
   };
 };
 
-function isConversationMessage(value: unknown): value is ConversationMessage {
-  if (value === null || typeof value !== "object") {
-    return false;
-  }
-  const message = value as Partial<ConversationMessage>;
-  return (
-    typeof message.role === "string" &&
-    ROLES.has(message.role) &&
-    typeof message.content === "string"
-  );
-}
-
-function asConversationMessages(
-  value: unknown,
-): ConversationMessage[] | undefined {
-  if (!Array.isArray(value) || !value.every(isConversationMessage)) {
-    return undefined;
-  }
-  return value;
-}
-
 function flattenText(content: unknown): string | undefined {
   if (typeof content === "string") {
     return content;
@@ -102,32 +82,16 @@ function flattenText(content: unknown): string | undefined {
   return parts.join("");
 }
 
-function pickAssembledBound(
-  payload: unknown,
-  decision: unknown,
-): ConversationMessage[] | undefined {
-  const record =
-    payload !== null && typeof payload === "object"
-      ? (payload as Record<string, unknown>)
-      : undefined;
-  const decided =
-    decision !== null && typeof decision === "object"
-      ? (decision as Record<string, unknown>)
-      : undefined;
-  return (
-    asConversationMessages(decided?.messages) ??
-    asConversationMessages(record?.assembled) ??
-    asConversationMessages(record?.messages)
-  );
-}
-
-function messagesChanged(
-  before: readonly ConversationMessage[],
-  after: readonly ConversationMessage[],
-): boolean {
-  return after.some(
-    (message, index) => message.content !== before[index]?.content,
-  );
+function sessionFromPayload(payload: unknown): SurfaceSession | undefined {
+  if (payload === null || typeof payload !== "object") {
+    return undefined;
+  }
+  const agent = (payload as { agent?: { session?: unknown } }).agent;
+  const session = agent?.session;
+  if (session === null || typeof session !== "object") {
+    return undefined;
+  }
+  return session as SurfaceSession;
 }
 
 function emitAfter(
@@ -185,10 +149,7 @@ async function onPreStep(
   const decision =
     typeof next === "function"
       ? await (next as () => Promise<unknown>)()
-      : {
-          kind: "enter",
-          messages: pickAssembledBound(payload, undefined) ?? [],
-        };
+      : { kind: "enter", messages: [] };
   if (
     decision !== null &&
     typeof decision === "object" &&
@@ -197,26 +158,22 @@ async function onPreStep(
     return decision;
   }
 
-  const bound = pickAssembledBound(payload, decision);
-  if (bound === undefined) {
+  const session = sessionFromPayload(payload);
+  if (session === undefined) {
     return decision;
   }
 
-  let rewritten: ConversationMessage[];
+  let result: { rewritten: ConversationMessage[]; replaced: number };
   try {
-    rewritten = compressConversation(bound);
+    result = rewriteSessionToolResults(session);
   } catch {
     return decision;
   }
 
-  if (messagesChanged(bound, rewritten)) {
-    emitAfter(ctx, "agent/pre-step", rewritten);
+  if (result.replaced > 0) {
+    emitAfter(ctx, "agent/pre-step", result.rewritten);
   }
-
-  if (decision !== null && typeof decision === "object") {
-    return { ...(decision as object), kind: "enter", messages: rewritten };
-  }
-  return { kind: "enter", messages: rewritten };
+  return decision;
 }
 
 async function onPostExecute(

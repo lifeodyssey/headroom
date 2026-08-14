@@ -108,6 +108,117 @@ function textBlocks(text: string): Array<{ type: "text"; text: string }> {
   return [{ type: "text", text }];
 }
 
+type SessionEvent = {
+  type: string;
+  seq: number;
+  data: unknown;
+};
+
+type AppendedEvent = {
+  type: string;
+  data: unknown;
+  opts?: { surfaceOp?: unknown; sourceEventSeqs?: number[] };
+};
+
+function dshUserMessage(
+  id: string,
+  content: Array<{ type: string; text?: string }>,
+) {
+  return {
+    id,
+    role: "user" as const,
+    content,
+    source: { kind: "user" as const },
+  };
+}
+
+function toolResultMessage(callId: string, text: string) {
+  return {
+    id: `msg-${callId}`,
+    role: "user" as const,
+    content: [
+      {
+        type: "tool-result",
+        toolCallId: callId,
+        content: textBlocks(text),
+      },
+    ],
+    source: { kind: "tool" as const, callId },
+  };
+}
+
+function userEvent(seq: number, text: string): SessionEvent {
+  return {
+    type: "user/message",
+    seq,
+    data: dshUserMessage(`user-${seq}`, textBlocks(text)),
+  };
+}
+
+function assistantEvent(seq: number, text: string): SessionEvent {
+  return {
+    type: "assistant/message",
+    seq,
+    data: {
+      message: {
+        id: `asst-${seq}`,
+        role: "assistant",
+        content: textBlocks(text),
+        source: { kind: "model", provider: "test", model: "test" },
+      },
+    },
+  };
+}
+
+function toolCallEvent(seq: number, callId: string, name: string): SessionEvent {
+  return {
+    type: "tool/call",
+    seq,
+    data: { turn: 1, step: 1, callId, name, arguments: "{}" },
+  };
+}
+
+function toolResultEvent(
+  seq: number,
+  callId: string,
+  text: string,
+): SessionEvent {
+  return {
+    type: "tool/result",
+    seq,
+    data: {
+      turn: 1,
+      step: 1,
+      message: toolResultMessage(callId, text),
+    },
+  };
+}
+
+function fakeSession(log: SessionEvent[]) {
+  const events: SessionEvent[] = [];
+  for (const event of log) {
+    events[event.seq] = event;
+  }
+  const appended: AppendedEvent[] = [];
+  return {
+    events,
+    surface: {
+      nodes: log
+        .filter((event) =>
+          ["user/message", "assistant/message", "tool/result"].includes(
+            event.type,
+          ),
+        )
+        .map((event) => event.seq),
+    },
+    appended,
+    append(type: string, data: unknown, opts?: AppendedEvent["opts"]) {
+      appended.push({ type, data, opts });
+      return { seq: 1000 + appended.length };
+    },
+  };
+}
+
 describe("plugin surface", () => {
   it("does not replace official spill or take a Headroom proxy URL", () => {
     const { ctx, provided, listeners } = fakeCtx();
@@ -140,43 +251,58 @@ describe("plugin surface", () => {
     });
   });
 
-  it("rewrites a fake agent/pre-step assembled bound and keeps skip policy", async () => {
+  it("replaces a long bash tool/result on the session surface and leaves enter.messages as DSH user rows", async () => {
     await withHome(async () => {
       const { ctx, listeners, emitted } = fakeCtx();
       apply(ctx);
 
-      const assembled: ConversationMessage[] = [
-        { role: "user", content: LONG_ORIGINAL },
-        { role: "tool", content: LONG_ORIGINAL, toolName: "Read" },
-        { role: "tool", content: LONG_ORIGINAL, toolName: "bash" },
-        ...PROTECTED_TAIL,
+      const session = fakeSession([
+        userEvent(10, "do the work"),
+        toolCallEvent(11, "call-read", "Read"),
+        toolResultEvent(12, "call-read", LONG_ORIGINAL),
+        toolCallEvent(13, "call-bash", "bash"),
+        toolResultEvent(14, "call-bash", LONG_ORIGINAL),
+        ...[15, 16, 17, 18].map((seq) => assistantEvent(seq, `tail-${seq}`)),
+      ]);
+      const enterMessages = [
+        dshUserMessage("do the work", [{ type: "text", text: "do the work" }]),
       ];
       const preStep = handler(listeners, "agent/pre-step");
       const decision = await preStep(
-        { messages: assembled },
-        () => Promise.resolve({ kind: "enter", messages: assembled }),
+        { agent: { session }, messages: enterMessages },
+        () => Promise.resolve({ kind: "enter", messages: enterMessages }),
       );
 
-      expect(decision).toMatchObject({ kind: "enter" });
-      const messages = (decision as { messages: ConversationMessage[] }).messages;
-      expect(messages[0]).toEqual(assembled[0]);
-      expect(messages[1]).toEqual(assembled[1]);
-      expect(messages[2]).toMatchObject({
-        role: "tool",
-        toolName: "bash",
-        compressed: true,
+      expect(decision).toEqual({ kind: "enter", messages: enterMessages });
+      expect(enterMessages[0]?.content).toEqual([
+        { type: "text", text: "do the work" },
+      ]);
+
+      const replacements = session.appended.filter(
+        (entry) =>
+          entry.type === "tool/result" &&
+          (entry.opts?.surfaceOp as { op?: string } | undefined)?.op ===
+            "replace",
+      );
+      expect(replacements).toHaveLength(1);
+      expect(replacements[0]?.opts).toEqual({
+        surfaceOp: { op: "replace", start: 14, end: 14 },
+        sourceEventSeqs: [14],
       });
-      expect(messages[2]?.content).toContain(LONG_LOCATOR);
-      expect(messages[2]?.content).toContain(RETRIEVE_HINT);
-      expect(messages[2]?.content.length).toBeLessThan(LONG_ORIGINAL.length);
-      expect(messages.slice(3)).toEqual(PROTECTED_TAIL);
+      const crushedBlock = (
+        replacements[0]?.data as {
+          message: { content: Array<{ content: Array<{ text: string }> }> };
+        }
+      ).message.content[0]?.content[0];
+      expect(crushedBlock?.text).toContain(LONG_LOCATOR);
+      expect(crushedBlock?.text).toContain(RETRIEVE_HINT);
+      expect(crushedBlock?.text.length).toBeLessThan(LONG_ORIGINAL.length);
       expect(emitted).toEqual([
         {
           event: "contextCompression/after",
-          payload: {
+          payload: expect.objectContaining({
             source: "agent/pre-step",
-            messages,
-          },
+          }),
         },
       ]);
     });

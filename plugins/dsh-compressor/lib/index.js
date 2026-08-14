@@ -1,4 +1,5 @@
 import { compressConversation, retrieve, } from "./compress.js";
+import { rewriteSessionToolResults, } from "./session-rewrite.js";
 export { compressConversation, retrieve, } from "./compress.js";
 export const name = "dsh-compressor";
 export const inject = ["tools"];
@@ -10,22 +11,6 @@ const POST_EXECUTE_TAIL = [
     { role: "assistant", content: "tail-3" },
     { role: "assistant", content: "tail-4" },
 ];
-const ROLES = new Set(["user", "assistant", "system", "tool"]);
-function isConversationMessage(value) {
-    if (value === null || typeof value !== "object") {
-        return false;
-    }
-    const message = value;
-    return (typeof message.role === "string" &&
-        ROLES.has(message.role) &&
-        typeof message.content === "string");
-}
-function asConversationMessages(value) {
-    if (!Array.isArray(value) || !value.every(isConversationMessage)) {
-        return undefined;
-    }
-    return value;
-}
 function flattenText(content) {
     if (typeof content === "string") {
         return content;
@@ -46,19 +31,16 @@ function flattenText(content) {
     }
     return parts.join("");
 }
-function pickAssembledBound(payload, decision) {
-    const record = payload !== null && typeof payload === "object"
-        ? payload
-        : undefined;
-    const decided = decision !== null && typeof decision === "object"
-        ? decision
-        : undefined;
-    return (asConversationMessages(decided?.messages) ??
-        asConversationMessages(record?.assembled) ??
-        asConversationMessages(record?.messages));
-}
-function messagesChanged(before, after) {
-    return after.some((message, index) => message.content !== before[index]?.content);
+function sessionFromPayload(payload) {
+    if (payload === null || typeof payload !== "object") {
+        return undefined;
+    }
+    const agent = payload.agent;
+    const session = agent?.session;
+    if (session === null || typeof session !== "object") {
+        return undefined;
+    }
+    return session;
 }
 function emitAfter(ctx, source, messages) {
     ctx.emit?.(CONTEXT_COMPRESSION_AFTER, { source, messages });
@@ -100,33 +82,27 @@ function contributePrompt(ctx) {
 async function onPreStep(ctx, payload, next) {
     const decision = typeof next === "function"
         ? await next()
-        : {
-            kind: "enter",
-            messages: pickAssembledBound(payload, undefined) ?? [],
-        };
+        : { kind: "enter", messages: [] };
     if (decision !== null &&
         typeof decision === "object" &&
         decision.kind === "reject") {
         return decision;
     }
-    const bound = pickAssembledBound(payload, decision);
-    if (bound === undefined) {
+    const session = sessionFromPayload(payload);
+    if (session === undefined) {
         return decision;
     }
-    let rewritten;
+    let result;
     try {
-        rewritten = compressConversation(bound);
+        result = rewriteSessionToolResults(session);
     }
     catch {
         return decision;
     }
-    if (messagesChanged(bound, rewritten)) {
-        emitAfter(ctx, "agent/pre-step", rewritten);
+    if (result.replaced > 0) {
+        emitAfter(ctx, "agent/pre-step", result.rewritten);
     }
-    if (decision !== null && typeof decision === "object") {
-        return { ...decision, kind: "enter", messages: rewritten };
-    }
-    return { kind: "enter", messages: rewritten };
+    return decision;
 }
 async function onPostExecute(ctx, exec, result, next) {
     const decision = (typeof next === "function"
