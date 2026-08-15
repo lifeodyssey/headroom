@@ -5,7 +5,7 @@
 [![npm](https://img.shields.io/npm/v/dsh-compressor.svg)](https://www.npmjs.com/package/dsh-compressor)
 [![CI](https://github.com/lifeodyssey/dsh-compressor/actions/workflows/dsh-compressor.yml/badge.svg)](https://github.com/lifeodyssey/dsh-compressor/actions/workflows/dsh-compressor.yml)
 
-Compresses tool output and cuts up to 20% of context, without affecting the model's context cache or agent performance.
+A slim port of [Headroom](https://github.com/headroomlabs-ai/headroom). Compresses tool output and cuts up to 20% of context, without affecting the model's context cache or agent performance.
 
 ## Install
 
