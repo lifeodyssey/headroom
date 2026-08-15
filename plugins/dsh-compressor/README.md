@@ -2,6 +2,8 @@
 
 DeepSeek Harness bundle. Compresses long tool results in-process and restores them with `compressor_retrieve`.
 
+On 20 redacted real DSH sessions, `Session.deriveMessages()` JSON shrank by **up to 20%**. Official spill left verbatim. Reproduce: `node scripts/measure-sessions.mjs`.
+
 ## Install into a DSH profile
 
 `dsh plugin` forwards to `pnpm` in `$DSH_HOME/profiles/<name>`. Relative paths are resolved from the directory you run `dsh` in.
@@ -15,14 +17,10 @@ dsh plugin --profile web add ./plugins/dsh-compressor
 **GitHub subdirectory** (plugin is not the repo root)
 
 ```bash
-# after the plugin branch is on main
 dsh plugin --profile web add github:lifeodyssey/dsh-compressor#path:plugins/dsh-compressor
-
-# until then
-dsh plugin --profile web add 'github:lifeodyssey/dsh-compressor#feat/deepseek-harness-plugin&path:plugins/dsh-compressor'
 ```
 
-**npm** (after `npm publish` from this directory)
+**npm**
 
 ```bash
 dsh plugin --profile web add dsh-compressor
@@ -60,18 +58,3 @@ pnpm typecheck
 ```
 
 Rebuild JS after source edits: `pnpm build`. Rebuild the native addon only if you change Rust crushers: `pnpm build:native` (needs the repo’s Cargo workspace).
-
-## Publish to npm
-
-The npm name `dsh-compressor` is currently free. Publish **this directory**, not the repository root.
-
-```bash
-pnpm install
-pnpm build
-# confirm files: lib/, native/*.node, cordis.patch.yml
-npm publish --access public
-```
-
-Then users install with `dsh plugin --profile web add dsh-compressor`. Bump `version` in `package.json` for each release.
-
-Requires an npm account with publish rights. Do not commit `.npmrc` tokens.
