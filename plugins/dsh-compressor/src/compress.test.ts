@@ -16,6 +16,7 @@ import {
   retrieve,
   type ConversationMessage,
 } from "./compress.js";
+import { enableRetrieveInTests } from "./test-helpers.js";
 
 const fixturePath = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -25,6 +26,8 @@ const fixturePath = join(
 );
 
 const stores: string[] = [];
+
+enableRetrieveInTests();
 
 afterEach(() => {
   for (const dir of stores.splice(0)) {
@@ -233,6 +236,21 @@ describe("compressConversation", () => {
     );
 
     expect(retrieve(LONG_HASH, { storeDir })).toBe(LONG_ORIGINAL);
+  });
+
+  it("retrieves when the extracted hash is uppercase", () => {
+    const storeDir = tempStore();
+    compressConversation(
+      withProtectedTail([
+        { role: "tool", content: LONG_ORIGINAL, toolName: "bash" },
+      ]),
+      { storeDir },
+    );
+
+    expect(retrieve(LONG_HASH.toUpperCase(), { storeDir })).toBe(LONG_ORIGINAL);
+    expect(
+      retrieve(`<<compressor:${LONG_HASH.toUpperCase()}>>`, { storeDir }),
+    ).toBe(LONG_ORIGINAL);
   });
 
   it("retrieves after a simulated restart from disk only", () => {
@@ -457,6 +475,21 @@ describe("compressConversation", () => {
 
     expect(traceback.length).toBeGreaterThan(500);
     expect(traceback.length).toBeLessThanOrEqual(8000);
+    expect(compressConversation(messages, { storeDir })).toEqual(messages);
+    expect(readdirSync(storeDir)).toEqual([]);
+  });
+
+  it("leaves a long bash log with an official spill footer verbatim", () => {
+    const storeDir = tempStore();
+    const payload =
+      `${LONG_ORIGINAL}\n` +
+      "(Omitted 7230 bytes. Full formatted result stored at: " +
+      "/tmp/dsh-spill/session/run_code.txt. " +
+      "Use read with offset/limit, or grep this path to search within it.)";
+    const messages = withProtectedTail([
+      { role: "tool" as const, content: payload, toolName: "bash" },
+    ]);
+
     expect(compressConversation(messages, { storeDir })).toEqual(messages);
     expect(readdirSync(storeDir)).toEqual([]);
   });

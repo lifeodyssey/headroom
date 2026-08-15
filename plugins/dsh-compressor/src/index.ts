@@ -1,5 +1,8 @@
+import { defineTool, type ToolDefinition } from "@deepseek-ai/dsh-tools";
+
 import {
   compressConversation,
+  markRetrieveRegistered,
   retrieve,
   type ConversationMessage,
 } from "./compress.js";
@@ -17,7 +20,7 @@ export {
 } from "./compress.js";
 
 export const name = "dsh-compressor";
-export const inject = ["tools"];
+export const inject = ["tools", "systemPrompt"];
 export const CONTEXT_COMPRESSION_AFTER = "contextCompression/after";
 
 const LOCATOR_PROMPT =
@@ -31,19 +34,7 @@ type PluginContext = {
   on?: (event: string, handler: (...args: unknown[]) => unknown) => unknown;
   emit?: (event: string, payload?: unknown) => unknown;
   tools?: {
-    register?: (definition: {
-      name: string;
-      description: string;
-      parameters: Record<string, unknown>;
-      output: {
-        schema: { type: "string" };
-        render: (
-          args: unknown,
-          value: string,
-        ) => Array<{ type: "text"; text: string }>;
-      };
-      execute: (args: RetrieveArgs) => Promise<string>;
-    }) => unknown;
+    register?: (definition: ToolDefinition) => (() => void) | unknown;
   };
   systemPrompt?: {
     section?: (section: {
@@ -95,35 +86,39 @@ function emitAfter(
   ctx.emit?.(CONTEXT_COMPRESSION_AFTER, { source, messages });
 }
 
-function registerRetrieve(ctx: PluginContext): void {
-  const register = ctx.tools?.register;
-  if (typeof register !== "function") {
-    return;
+function registerRetrieve(ctx: PluginContext): boolean {
+  if (typeof ctx.tools?.register !== "function") {
+    return false;
   }
 
-  register({
-    name: "compressor_retrieve",
-    description:
-      "Restore original conversation text for a compressor locator or content hash. The locator is not a filesystem path.",
-    parameters: {
-      type: "object",
-      properties: {
-        locator: {
-          type: "string",
-          description:
-            "Full <<compressor:hash>> locator or the bare content hash.",
+  try {
+    const disposer = ctx.tools.register(
+      defineTool({
+        name: "compressor_retrieve",
+        description:
+          "Restore original conversation text for a compressor locator or content hash. The locator is not a filesystem path.",
+        parameters: {
+          locator: {
+            type: "string",
+            required: true,
+            description:
+              "Full <<compressor:hash>> locator or the bare content hash.",
+          },
         },
-      },
-      required: ["locator"],
-    },
-    output: {
-      schema: { type: "string" },
-      render: (_args: unknown, value: string) => [{ type: "text", text: value }],
-    },
-    async execute(args: RetrieveArgs) {
-      return retrieve(args?.locator);
-    },
-  });
+        output: {
+          schema: { type: "string" },
+          render: (_args, value) => [{ type: "text", text: value }],
+        },
+        async execute(args: RetrieveArgs) {
+          return retrieve(args.locator);
+        },
+      }),
+    );
+    // Official ToolRuntime.register returns a disposer. A no-op register is not success.
+    return typeof disposer === "function";
+  } catch {
+    return false;
+  }
 }
 
 function contributePrompt(ctx: PluginContext): void {
@@ -255,7 +250,12 @@ function hangHooks(ctx: PluginContext): void {
 
 export function apply(ctx: object): void {
   const plugin = ctx as PluginContext;
-  registerRetrieve(plugin);
-  contributePrompt(plugin);
+  if (
+    registerRetrieve(plugin) &&
+    typeof plugin.systemPrompt?.section === "function"
+  ) {
+    markRetrieveRegistered();
+    contributePrompt(plugin);
+  }
   hangHooks(plugin);
 }

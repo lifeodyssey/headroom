@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,8 +10,8 @@ import {
   retrieve,
   type ConversationMessage,
 } from "./compress.js";
-import { apply } from "./index.js";
 import { rewriteSessionToolResults } from "./session-rewrite.js";
+import { enableRetrieveInTests } from "./test-helpers.js";
 
 const fixturesRoot = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -28,6 +28,8 @@ const PROTECTED_TAIL: ConversationMessage[] = [
 
 const stores: string[] = [];
 
+enableRetrieveInTests();
+
 afterEach(() => {
   for (const dir of stores.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
@@ -35,27 +37,28 @@ afterEach(() => {
 });
 
 describe("real DSH session payloads", () => {
-  it("compresses a redacted DSH run_code tool result end to end", () => {
+  it("leaves official spill notice verbatim", () => {
     const original = readFileSync(
       join(fixturesRoot, "dsh-tool-result-log.txt"),
       "utf8",
     );
     expect(original.length).toBeGreaterThan(10_000);
+    expect(original).toContain("Full formatted result stored at:");
+    expect(original).toMatch(/use read with offset\/limit, or grep this path/i);
 
     const storeDir = mkdtempSync(join(tmpdir(), "dsh-e2e-"));
     stores.push(storeDir);
-    const [crushed] = compressConversation(
-      [
-        { role: "tool", content: original, toolName: "run_code" },
-        ...PROTECTED_TAIL,
-      ],
-      { storeDir },
-    );
+    const messages: ConversationMessage[] = [
+      { role: "tool", content: original, toolName: "run_code" },
+      ...PROTECTED_TAIL,
+    ];
+    const compressed = compressConversation(messages, { storeDir });
 
-    expect(crushed?.content.length).toBeLessThan(original.length);
-    expect(crushed?.content).toMatch(/<<compressor:[0-9a-f]{64}>>/);
-    expect(retrieve(crushed?.content, { storeDir })).toBe(original);
-    expect(JSON.stringify(crushed)).not.toMatch(/\/Users\/lumimamini/);
+    expect(compressed).toEqual(messages);
+    expect(compressed[0]?.content).toBe(original);
+    expect(compressed[0]?.content).not.toMatch(/<<compressor:/);
+    expect(readdirSync(storeDir)).toEqual([]);
+    expect(JSON.stringify(compressed)).not.toMatch(/\/Users\/lumimamini/);
   });
 
   it("compresses a redacted DSH shell-shaped tool result end to end", () => {
@@ -135,7 +138,6 @@ describe("real DSH session payloads", () => {
       };
     }
 
-    apply({ on() {}, emit() {}, tools: { register() {} } });
     const result = rewriteSessionToolResults(session);
     expect(result.replaced).toBe(1);
     expect(session.appended[0]?.opts?.surfaceOp?.op).toBe("replace");

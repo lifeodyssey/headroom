@@ -12,8 +12,12 @@ vi.mock("./native.js", async (importOriginal) => {
   };
 });
 
-import { compressConversation, type ConversationMessage } from "./compress.js";
+import {
+  compressConversation,
+  type ConversationMessage,
+} from "./compress.js";
 import { nativeAvailable } from "./native.js";
+import { enableRetrieveInTests } from "./test-helpers.js";
 
 const LONG_ORIGINAL =
   "build log line: compilation unit failed with diagnostics\n".repeat(80);
@@ -26,6 +30,8 @@ const PROTECTED_TAIL: ConversationMessage[] = [
 ];
 
 const stores: string[] = [];
+
+enableRetrieveInTests();
 
 afterEach(() => {
   vi.restoreAllMocks();

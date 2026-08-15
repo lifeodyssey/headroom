@@ -1,9 +1,12 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { resetRetrieveRegistered } from "./compress.js";
+import { bootOfficialTools } from "./test-helpers.js";
 import {
   apply,
   compressConversation,
@@ -14,6 +17,7 @@ import {
 const homes: string[] = [];
 
 afterEach(() => {
+  resetRetrieveRegistered();
   for (const home of homes.splice(0)) {
     rmSync(home, { recursive: true, force: true });
   }
@@ -62,14 +66,23 @@ async function withHome<T>(run: (home: string) => Promise<T>): Promise<T> {
   }
 }
 
-function fakeCtx() {
+function fakeCtx(options?: {
+  includeTools?: boolean;
+  register?: (tool: RetrieveTool) => unknown;
+}) {
   const listeners = new Map<string, Listener[]>();
   const emitted: Array<{ event: string; payload: unknown }> = [];
   const provided: string[] = [];
   const sections: PromptSection[] = [];
   const tools: RetrieveTool[] = [];
 
-  const ctx = {
+  const ctx: {
+    on(event: string, handler: Listener): void;
+    emit(event: string, payload: unknown): void;
+    provide(key: string, _value: unknown): void;
+    tools?: { register(tool: RetrieveTool): unknown };
+    systemPrompt: { section(section: PromptSection): void };
+  } = {
     on(event: string, handler: Listener) {
       const existing = listeners.get(event) ?? [];
       existing.push(handler);
@@ -81,11 +94,6 @@ function fakeCtx() {
     provide(key: string, _value: unknown) {
       provided.push(key);
     },
-    tools: {
-      register(tool: RetrieveTool) {
-        tools.push(tool);
-      },
-    },
     systemPrompt: {
       section(section: PromptSection) {
         sections.push(section);
@@ -93,7 +101,39 @@ function fakeCtx() {
     },
   };
 
+  if (options?.includeTools !== false) {
+    ctx.tools = {
+      register(tool: RetrieveTool) {
+        if (options?.register !== undefined) {
+          return options.register(tool);
+        }
+        tools.push(tool);
+        return () => {};
+      },
+    };
+  }
+
   return { ctx, listeners, emitted, provided, sections, tools };
+}
+
+async function executeRetrieve(
+  tools: ToolRuntime,
+  locator: string,
+  callId: string,
+) {
+  return tools.execute({
+    callId,
+    name: "compressor_retrieve",
+    arguments: { locator },
+    signal: new AbortController().signal,
+  });
+}
+
+function crushableToolTurn(): ConversationMessage[] {
+  return [
+    { role: "tool", content: LONG_ORIGINAL, toolName: "bash" },
+    ...PROTECTED_TAIL,
+  ];
 }
 
 function handler(listeners: Map<string, Listener[]>, event: string): Listener {
@@ -231,17 +271,15 @@ describe("plugin surface", () => {
 
   it("registers compressor_retrieve when ctx.tools.register exists", async () => {
     await withHome(async () => {
-      compressConversation([
-        { role: "tool", content: LONG_ORIGINAL, toolName: "bash" },
-        ...PROTECTED_TAIL,
-      ]);
-
       const { ctx, tools } = fakeCtx();
       apply(ctx);
 
-      expect(inject).toEqual(["tools"]);
+      expect(inject).toEqual(["tools", "systemPrompt"]);
       expect(tools).toHaveLength(1);
       expect(tools[0]?.name).toBe("compressor_retrieve");
+
+      compressConversation(crushableToolTurn());
+
       await expect(tools[0]?.execute({ locator: LONG_LOCATOR })).resolves.toBe(
         LONG_ORIGINAL,
       );
@@ -406,5 +444,258 @@ describe("plugin surface", () => {
     expect(text).toMatch(/locator/i);
     expect(text).toMatch(/not filesystem paths/i);
     expect(text).not.toMatch(/\/Users\/|~\/|\.\//);
+  });
+});
+
+describe("official ToolRuntime retrieve", () => {
+  it("registers compressor_retrieve on a real ToolRuntime catalog", async () => {
+    await withHome(async () => {
+      const { tools } = bootOfficialTools();
+
+      expect(tools).toBeInstanceOf(ToolRuntime);
+      expect(tools.schemas).toBe(ToolRuntime.prototype.schemas);
+      expect(tools.execute).toBe(ToolRuntime.prototype.execute);
+      expect(tools.schemas().map((schema) => schema.name)).toContain(
+        "compressor_retrieve",
+      );
+      const schema = tools.schemas().find(
+        (entry) => entry.name === "compressor_retrieve",
+      );
+      expect(schema?.parameters).toMatchObject({
+        type: "object",
+        required: ["locator"],
+        properties: {
+          locator: { type: "string" },
+        },
+      });
+    });
+  });
+
+  it("executes a locator or bare hash and returns the original disk bytes", async () => {
+    await withHome(async () => {
+      const { tools } = bootOfficialTools();
+      compressConversation(crushableToolTurn());
+
+      const byLocator = await executeRetrieve(tools, LONG_LOCATOR, "by-locator");
+      const byHash = await executeRetrieve(tools, LONG_HASH, "by-hash");
+
+      expect(byLocator).toMatchObject({
+        isError: false,
+        value: LONG_ORIGINAL,
+      });
+      expect(byHash).toMatchObject({
+        isError: false,
+        value: LONG_ORIGINAL,
+      });
+    });
+  });
+
+  it("looks up an uppercase hex hash against the lowercase store key", async () => {
+    await withHome(async () => {
+      const { tools } = bootOfficialTools();
+      compressConversation(crushableToolTurn());
+
+      const byBare = await executeRetrieve(
+        tools,
+        LONG_HASH.toUpperCase(),
+        "upper-hash",
+      );
+      const byLocator = await executeRetrieve(
+        tools,
+        `<<compressor:${LONG_HASH.toUpperCase()}>>`,
+        "upper-locator",
+      );
+
+      expect(byBare).toMatchObject({ isError: false, value: LONG_ORIGINAL });
+      expect(byLocator).toMatchObject({ isError: false, value: LONG_ORIGINAL });
+    });
+  });
+
+  it("fails clearly on a missing or unknown hash and invents no content", async () => {
+    await withHome(async () => {
+      const { tools } = bootOfficialTools();
+      const missing =
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+      const unknown = await executeRetrieve(tools, missing, "missing");
+      const invalid = await executeRetrieve(
+        tools,
+        "not-a-locator-or-hash",
+        "invalid",
+      );
+
+      expect(unknown.isError).toBe(true);
+      expect(invalid.isError).toBe(true);
+      if (unknown.isError) {
+        expect(unknown.error.message).toBe(
+          `compressor_retrieve: unknown hash ${missing}`,
+        );
+      }
+      if (invalid.isError) {
+        expect(invalid.error.message).toMatch(
+          /compressor_retrieve: missing or unknown hash/,
+        );
+      }
+      expect(JSON.stringify(unknown)).not.toContain(LONG_ORIGINAL);
+      expect(JSON.stringify(invalid)).not.toContain(LONG_ORIGINAL);
+    });
+  });
+
+  it("does not crush compressor_retrieve output into a new locator", async () => {
+    await withHome(async () => {
+      const { tools } = bootOfficialTools();
+      compressConversation(crushableToolTurn());
+
+      const result = await executeRetrieve(tools, LONG_LOCATOR, "no-recrush");
+      expect(result.isError).toBe(false);
+      if (result.isError) {
+        return;
+      }
+
+      const [again] = compressConversation([
+        {
+          role: "tool",
+          toolName: "compressor_retrieve",
+          content: result.value,
+        },
+      ]);
+      expect(again?.content).toBe(LONG_ORIGINAL);
+      expect(again?.content).not.toMatch(/<<compressor:/);
+    });
+  });
+
+  it("assembles the locator prompt section with the tool", async () => {
+    await withHome(async () => {
+      const { ctx, tools } = bootOfficialTools();
+      const assembly = await ctx.systemPrompt.assemble();
+
+      expect(tools.schemas().map((schema) => schema.name)).toContain(
+        "compressor_retrieve",
+      );
+      expect(assembly.tools.map((schema) => schema.name)).toContain(
+        "compressor_retrieve",
+      );
+      const locatorSection = assembly.sections.find(
+        (section) => section.name === "dsh-compressor:locators",
+      );
+      expect(locatorSection?.text).toMatch(/locator/i);
+      expect(locatorSection?.text).toMatch(/not filesystem paths/i);
+    });
+  });
+});
+
+describe("fail-closed crush", () => {
+  it("does not crush when apply was never called", async () => {
+    await withHome(async (home) => {
+      const messages = crushableToolTurn();
+      const compressed = compressConversation(messages);
+
+      expect(compressed).toEqual(messages);
+      expect(compressed[0]?.content).toBe(LONG_ORIGINAL);
+      expect(compressed[0]?.content).not.toMatch(/<<compressor:/);
+      const store = join(home, "dsh-compressor");
+      expect(existsSync(store) ? readdirSync(store) : []).toEqual([]);
+    });
+  });
+
+  it("does not crush when apply has no tools.register", async () => {
+    await withHome(async () => {
+      const { ctx, listeners, emitted, sections } = fakeCtx({
+        includeTools: false,
+      });
+      apply(ctx);
+      expect(sections).toEqual([]);
+
+      const messages = crushableToolTurn();
+      expect(compressConversation(messages)).toEqual(messages);
+
+      const session = fakeSession([
+        userEvent(10, "do the work"),
+        toolCallEvent(11, "call-bash", "bash"),
+        toolResultEvent(12, "call-bash", LONG_ORIGINAL),
+        ...[13, 14, 15, 16].map((seq) => assistantEvent(seq, `tail-${seq}`)),
+      ]);
+      const preStep = handler(listeners, "agent/pre-step");
+      const enter = await preStep(
+        { agent: { session } },
+        () => Promise.resolve({ kind: "enter", messages: [] }),
+      );
+      expect(enter).toEqual({ kind: "enter", messages: [] });
+      expect(session.appended).toEqual([]);
+
+      const postExecute = handler(listeners, "tools/post-execute");
+      const decision = await postExecute(
+        { name: "bash" },
+        { content: textBlocks(LONG_ORIGINAL), isError: false },
+        () => Promise.resolve({ kind: "accept" }),
+      );
+      expect(decision).toEqual({ kind: "accept" });
+      expect(emitted).toEqual([]);
+    });
+  });
+
+  it("does not crush when tools.register returns no disposer", async () => {
+    await withHome(async () => {
+      const { ctx, emitted, sections } = fakeCtx({
+        register() {},
+      });
+      apply(ctx);
+
+      const messages = crushableToolTurn();
+      expect(compressConversation(messages)).toEqual(messages);
+      expect(messages[0]?.content).not.toMatch(/<<compressor:/);
+      expect(sections).toEqual([]);
+      expect(emitted).toEqual([]);
+    });
+  });
+
+  it("does not crush when tools.register succeeds but systemPrompt.section is missing", async () => {
+    await withHome(async () => {
+      apply({
+        tools: {
+          register() {
+            return () => {};
+          },
+        },
+      });
+      const messages = crushableToolTurn();
+      expect(compressConversation(messages)).toEqual(messages);
+      expect(messages[0]?.content).not.toMatch(/<<compressor:/);
+    });
+  });
+
+  it("does not crush when tools.register throws", async () => {
+    await withHome(async () => {
+      const { ctx, listeners, emitted } = fakeCtx({
+        register() {
+          throw new Error("register failed");
+        },
+      });
+      expect(() => apply(ctx)).not.toThrow();
+
+      const messages = crushableToolTurn();
+      expect(compressConversation(messages)).toEqual(messages);
+
+      const postExecute = handler(listeners, "tools/post-execute");
+      const decision = await postExecute(
+        { name: "bash" },
+        { content: textBlocks(LONG_ORIGINAL), isError: false },
+        () => Promise.resolve({ kind: "accept" }),
+      );
+      expect(decision).toEqual({ kind: "accept" });
+      expect(emitted).toEqual([]);
+    });
+  });
+
+  it("crushes after a successful register the same way as today", async () => {
+    await withHome(async () => {
+      const { ctx } = fakeCtx();
+      apply(ctx);
+
+      const compressed = compressConversation(crushableToolTurn());
+      expect(compressed[0]?.content).toContain(LONG_LOCATOR);
+      expect(compressed[0]?.content).toContain(RETRIEVE_HINT);
+      expect(compressed[0]?.content.length).toBeLessThan(LONG_ORIGINAL.length);
+    });
   });
 });

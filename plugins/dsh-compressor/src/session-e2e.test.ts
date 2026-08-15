@@ -12,8 +12,10 @@ import { fileURLToPath } from "node:url";
 import { zstdDecompressSync } from "node:zlib";
 import { beforeAll, describe, expect, it } from "vitest";
 import { Session } from "@deepseek-ai/dsh-session";
-import { apply } from "./index.js";
+import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import { retrieve } from "./compress.js";
+import { apply } from "./index.js";
+import { bootOfficialTools } from "./test-helpers.js";
 
 const FIXTURE_DIR = fileURLToPath(new URL("../fixtures/sessions/", import.meta.url));
 const LOCATOR = /<<compressor:([0-9a-f]{64})>>/g;
@@ -37,20 +39,20 @@ function loadFixtureSession(name: string): InstanceType<typeof Session> {
 
 function applyPlugin() {
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
-  const ctx = {
+  const { ctx, tools } = bootOfficialTools();
+  apply({
     on: (event: string, handler: (...args: unknown[]) => unknown) => {
       handlers.set(event, handler);
     },
     emit: () => {},
-    tools: { register: () => {} },
-    systemPrompt: { section: () => {} },
-  };
-  apply(ctx);
+    tools,
+    systemPrompt: ctx.systemPrompt,
+  });
   const preStep = handlers.get("agent/pre-step") as PreStepHandler | undefined;
   if (preStep === undefined) {
     throw new Error("plugin did not register agent/pre-step");
   }
-  return { preStep, handlers };
+  return { preStep, handlers, tools };
 }
 
 async function runPreStep(preStep: PreStepHandler, session: InstanceType<typeof Session>) {
@@ -95,6 +97,38 @@ describe("offline e2e against official Session", () => {
     }
   });
 
+  it("redeems every locator through official ToolRuntime.execute", async () => {
+    const session = loadFixtureSession(fixtureNames()[0]!);
+    const before = JSON.stringify(session.deriveMessages());
+
+    const { preStep, tools } = applyPlugin();
+    await runPreStep(preStep, session);
+
+    const after = JSON.stringify(session.deriveMessages());
+    const hashes = [...after.matchAll(LOCATOR)].map((m) => m[1]!);
+    expect(hashes.length).toBeGreaterThan(0);
+
+    expect(tools).toBeInstanceOf(ToolRuntime);
+    expect(tools.schemas().map((schema) => schema.name)).toContain(
+      "compressor_retrieve",
+    );
+
+    for (const hash of hashes) {
+      const result = await tools.execute({
+        callId: `e2e-${hash.slice(0, 12)}`,
+        name: "compressor_retrieve",
+        arguments: { locator: hash },
+        signal: new AbortController().signal,
+      });
+      expect(result.isError, hash).toBe(false);
+      if (result.isError) {
+        continue;
+      }
+      expect(result.value).not.toMatch(LOCATOR);
+      expect(before).toContain(JSON.stringify(result.value).slice(1, -1));
+    }
+  });
+
   it("a second pre-step pass is a no-op: derived prefix is byte-stable", async () => {
     const session = loadFixtureSession(fixtureNames()[0]!);
     const { preStep } = applyPlugin();
@@ -112,8 +146,7 @@ describe("offline e2e against official Session", () => {
   });
 
   it("post-execute output fed back through pre-step never nests locators", async () => {
-    const session = loadFixtureSession(fixtureNames()[0]!);
-    const { preStep, handlers } = applyPlugin();
+    const { handlers } = applyPlugin();
     const postExecute = handlers.get("tools/post-execute") as (
       exec: unknown,
       result: unknown,
@@ -121,8 +154,11 @@ describe("offline e2e against official Session", () => {
     ) => Promise<{ kind?: string; content?: Array<{ text?: string }> }>;
     expect(postExecute).toBeDefined();
 
-    // Crush a real big tool result the way the tool layer would.
-    const bigText = JSON.stringify(session.deriveMessages());
+    // Crush a big tool result the way the tool layer would. Do not use
+    // deriveMessages() here: real sessions embed official spill footers,
+    // and those stay verbatim (#23).
+    const bigText =
+      "build log line: compilation unit failed with diagnostics\n".repeat(80);
     const decision = await postExecute(
       { name: "run_code" },
       { content: [{ type: "text", text: bigText }], isError: false },

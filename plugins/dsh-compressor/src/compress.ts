@@ -72,8 +72,26 @@ const DEFAULT_EXCLUDE_TOOLS = new Set([
   "headroom_retrieve",
 ]);
 
-const LOCATOR_PATTERN = /<<compressor:([0-9a-f]{64})>>/;
-const BARE_HASH_PATTERN = /^[0-9a-f]{64}$/;
+const LOCATOR_PATTERN = /<<compressor:([0-9a-fA-F]{64})>>/;
+const BARE_HASH_PATTERN = /^[0-9a-fA-F]{64}$/;
+const SPILL_STORED_AT = "Full formatted result stored at:";
+const SPILL_RETRIEVE_HINT =
+  /use read with offset\/limit, or grep this path/i;
+
+function isOfficialSpillNotice(text: string): boolean {
+  return text.includes(SPILL_STORED_AT) && SPILL_RETRIEVE_HINT.test(text);
+}
+
+// Crush writes locators. Refuse until apply() actually registered retrieve.
+let retrieveRegistered = false;
+
+export function markRetrieveRegistered(): void {
+  retrieveRegistered = true;
+}
+
+export function resetRetrieveRegistered(): void {
+  retrieveRegistered = false;
+}
 
 function isExcludedTool(toolName: string | undefined): boolean {
   return toolName !== undefined && DEFAULT_EXCLUDE_TOOLS.has(toolName.toLowerCase());
@@ -230,12 +248,13 @@ export function retrieve(
     throw new Error("compressor_retrieve: missing or unknown hash");
   }
   const locatorMatch = locatorOrHash.match(LOCATOR_PATTERN);
-  const hash =
+  const extracted =
     locatorMatch?.[1] ??
     (BARE_HASH_PATTERN.test(locatorOrHash) ? locatorOrHash : undefined);
-  if (hash === undefined) {
+  if (extracted === undefined) {
     throw new Error("compressor_retrieve: missing or unknown hash");
   }
+  const hash = extracted.toLowerCase();
   try {
     return readFileSync(join(resolveStoreDir(options?.storeDir), hash), "utf8");
   } catch (error) {
@@ -251,6 +270,9 @@ export function compressConversation(
   messages: readonly ConversationMessage[],
   options?: CompressOptions,
 ): ConversationMessage[] {
+  if (!retrieveRegistered) {
+    return messages.map((message) => ({ ...message }));
+  }
   return messages.map((message, index) => {
     if (message.role === "user" || message.role === "system" || message.role === "assistant") {
       return { ...message };
@@ -266,6 +288,9 @@ export function compressConversation(
     // messages from the session surface without the in-memory `compressed`
     // flag, and recompressing would nest locators and bust the prefix cache.
     if (LOCATOR_PATTERN.test(message.content)) {
+      return { ...message };
+    }
+    if (isOfficialSpillNotice(message.content)) {
       return { ...message };
     }
     if (

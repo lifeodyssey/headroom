@@ -1,8 +1,9 @@
-import { compressConversation, retrieve, } from "./compress.js";
+import { defineTool } from "@deepseek-ai/dsh-tools";
+import { compressConversation, markRetrieveRegistered, retrieve, } from "./compress.js";
 import { rewriteSessionToolResults, } from "./session-rewrite.js";
 export { compressConversation, retrieve, } from "./compress.js";
 export const name = "dsh-compressor";
-export const inject = ["tools"];
+export const inject = ["tools", "systemPrompt"];
 export const CONTEXT_COMPRESSION_AFTER = "contextCompression/after";
 const LOCATOR_PROMPT = "Compressor locators such as <<compressor:hash>> are retrieve handles, not filesystem paths. Do not Read them. Call compressor_retrieve with the locator or its hash.";
 function flattenText(content) {
@@ -40,31 +41,34 @@ function emitAfter(ctx, source, messages) {
     ctx.emit?.(CONTEXT_COMPRESSION_AFTER, { source, messages });
 }
 function registerRetrieve(ctx) {
-    const register = ctx.tools?.register;
-    if (typeof register !== "function") {
-        return;
+    if (typeof ctx.tools?.register !== "function") {
+        return false;
     }
-    register({
-        name: "compressor_retrieve",
-        description: "Restore original conversation text for a compressor locator or content hash. The locator is not a filesystem path.",
-        parameters: {
-            type: "object",
-            properties: {
+    try {
+        const disposer = ctx.tools.register(defineTool({
+            name: "compressor_retrieve",
+            description: "Restore original conversation text for a compressor locator or content hash. The locator is not a filesystem path.",
+            parameters: {
                 locator: {
                     type: "string",
+                    required: true,
                     description: "Full <<compressor:hash>> locator or the bare content hash.",
                 },
             },
-            required: ["locator"],
-        },
-        output: {
-            schema: { type: "string" },
-            render: (_args, value) => [{ type: "text", text: value }],
-        },
-        async execute(args) {
-            return retrieve(args?.locator);
-        },
-    });
+            output: {
+                schema: { type: "string" },
+                render: (_args, value) => [{ type: "text", text: value }],
+            },
+            async execute(args) {
+                return retrieve(args.locator);
+            },
+        }));
+        // Official ToolRuntime.register returns a disposer. A no-op register is not success.
+        return typeof disposer === "function";
+    }
+    catch {
+        return false;
+    }
 }
 function contributePrompt(ctx) {
     ctx.systemPrompt?.section?.({
@@ -155,8 +159,11 @@ function hangHooks(ctx) {
 }
 export function apply(ctx) {
     const plugin = ctx;
-    registerRetrieve(plugin);
-    contributePrompt(plugin);
+    if (registerRetrieve(plugin) &&
+        typeof plugin.systemPrompt?.section === "function") {
+        markRetrieveRegistered();
+        contributePrompt(plugin);
+    }
     hangHooks(plugin);
 }
 //# sourceMappingURL=index.js.map

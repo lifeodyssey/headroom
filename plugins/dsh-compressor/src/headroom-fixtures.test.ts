@@ -9,6 +9,7 @@ import {
   retrieve,
   type ConversationMessage,
 } from "./compress.js";
+import { enableRetrieveInTests } from "./test-helpers.js";
 
 const fixturesRoot = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -50,6 +51,8 @@ function fixtureInput(data: HeadroomFixture): string {
   }
   throw new Error("unrecognized Headroom fixture input");
 }
+
+enableRetrieveInTests();
 
 function crush(text: string, toolName = "bash"): ConversationMessage {
   const [message] = compressConversation([
