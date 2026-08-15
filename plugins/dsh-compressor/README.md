@@ -4,7 +4,7 @@
 
 [![npm](https://img.shields.io/npm/v/dsh-compressor.svg)](https://www.npmjs.com/package/dsh-compressor)
 
-A DeepSeek Harness plugin that compresses tool output and cuts up to 20% of context, without affecting the model's context cache or agent performance.
+Compresses tool output and cuts up to 20% of context, without affecting the model's context cache or agent performance.
 
 ```bash
 dsh plugin --profile web add dsh-compressor
