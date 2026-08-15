@@ -119,7 +119,11 @@ fn smart_config(config: Option<&Value>) -> SmartCrusherConfig {
             "preserve_change_points",
             defaults.preserve_change_points,
         ),
-        factor_out_constants: bool_or(config, "factor_out_constants", defaults.factor_out_constants),
+        factor_out_constants: bool_or(
+            config,
+            "factor_out_constants",
+            defaults.factor_out_constants,
+        ),
         include_summaries: bool_or(config, "include_summaries", defaults.include_summaries),
         use_feedback_hints: bool_or(config, "use_feedback_hints", defaults.use_feedback_hints),
         toin_confidence_threshold: f64_or(
@@ -266,7 +270,11 @@ pub fn crush_smart(
     } else {
         SmartCrusher::new(cfg)
     };
-    let result = crusher.crush(&content, query.as_deref().unwrap_or(""), bias.unwrap_or(1.0));
+    let result = crusher.crush(
+        &content,
+        query.as_deref().unwrap_or(""),
+        bias.unwrap_or(1.0),
+    );
     CrushOut {
         compressed: result.compressed,
         was_modified: result.was_modified,
@@ -280,11 +288,7 @@ pub fn crush_smart(
 }
 
 #[napi]
-pub fn crush_text(
-    content: String,
-    context: Option<String>,
-    target_ratio: Option<f64>,
-) -> CrushOut {
+pub fn crush_text(content: String, context: Option<String>, target_ratio: Option<f64>) -> CrushOut {
     let result = TextCrusher::new(TextCrusherConfig::default()).compress(
         &content,
         context.as_deref().unwrap_or(""),
