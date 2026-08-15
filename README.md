@@ -5,7 +5,7 @@
 [![npm](https://img.shields.io/npm/v/dsh-compressor.svg)](https://www.npmjs.com/package/dsh-compressor)
 [![CI](https://github.com/lifeodyssey/dsh-compressor/actions/workflows/dsh-compressor.yml/badge.svg)](https://github.com/lifeodyssey/dsh-compressor/actions/workflows/dsh-compressor.yml)
 
-A DeepSeek Harness plugin that compresses tool output and cuts up to 20% of context, without affecting the model's context cache or agent performance.
+Compresses tool output and cuts up to 20% of context, without affecting the model's context cache or agent performance.
 
 ## Install
 
@@ -15,7 +15,7 @@ dsh plugin --profile web add dsh-compressor
 
 ## How it works
 
-A tool run leaves a long log. Only a small part of it is useful. This plugin shortens that output before the next turn, keeps the original on disk, and does not rewrite the prefix already sent to the model. To get the full text back, the model calls `compressor_retrieve`.
+A tool run leaves a long log / JSON / diff. Only a small part of it is useful. This plugin shortens that output before the next turn, keeps the original on disk, leaves the already-sent prefix alone so the cache stays valid, and gives the agent a tool to pull the full context back.
 
 ```mermaid
 flowchart LR
@@ -23,12 +23,13 @@ flowchart LR
   B -->|no| C[Full text stays]
   B -->|yes| D[Shorten and save original]
   D --> E[Model sees the useful part]
-  E --> F[Need the full text? compressor_retrieve]
 ```
 
 Compressor code comes from [Headroom](https://github.com/headroomlabs-ai/headroom). Wired in today: Log / Smart / Text / Search / Diff.
 
-- [ ] TODO: migrate the remaining compressors (Code-aware, Kompress, …)
+- [ ] TODO: migrate the remaining compressors
+  - Code-aware (tree-sitter)
+  - Kompress (ONNX)
 
 ## Develop
 
