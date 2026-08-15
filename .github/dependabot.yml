@@ -27,11 +27,9 @@ updates:
           - "minor"
           - "patch"
 
-  # npm dependency updates (DSH plugin + docs site)
   - package-ecosystem: npm
     directories:
       - "/plugins/dsh-compressor"
-      - "/docs"
     schedule:
       interval: weekly
     commit-message:

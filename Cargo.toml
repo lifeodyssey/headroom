@@ -15,8 +15,8 @@ default-members = [
 edition = "2021"
 rust-version = "1.80"
 license = "Apache-2.0"
-repository = "https://github.com/chopratejas/headroom"
-authors = ["Headroom Maintainers"]
+repository = "https://github.com/lifeodyssey/dsh-compressor"
+authors = ["dsh-compressor"]
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
