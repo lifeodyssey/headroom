@@ -2,14 +2,10 @@
 
 # dsh-compressor
 
-*Cut up to 20% of a DeepSeek Harness session — without hurting the model, and without rewriting what already went out.*
-
 [![npm](https://img.shields.io/npm/v/dsh-compressor.svg)](https://www.npmjs.com/package/dsh-compressor)
 
-On [npm](https://www.npmjs.com/package/dsh-compressor). Install with the official DSH command (`pnpm` required):
+A DeepSeek Harness plugin that compresses tool output and cuts up to 20% of context, without affecting the model's context cache or agent performance.
 
 ```bash
 dsh plugin --profile web add dsh-compressor
 ```
-
-Do not `npm i -g`. Full write-up: [repository README](https://github.com/lifeodyssey/dsh-compressor#readme).
