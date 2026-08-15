@@ -23,13 +23,6 @@ export const CONTEXT_COMPRESSION_AFTER = "contextCompression/after";
 const LOCATOR_PROMPT =
   "Compressor locators such as <<compressor:hash>> are retrieve handles, not filesystem paths. Do not Read them. Call compressor_retrieve with the locator or its hash.";
 
-const POST_EXECUTE_TAIL: ConversationMessage[] = [
-  { role: "assistant", content: "tail-1" },
-  { role: "assistant", content: "tail-2" },
-  { role: "assistant", content: "tail-3" },
-  { role: "assistant", content: "tail-4" },
-];
-
 type RetrieveArgs = {
   locator: string;
 };
@@ -205,10 +198,6 @@ async function onPostExecute(
           toolName?: unknown;
         })
       : undefined;
-  if (resultRecord?.isError === true) {
-    return decision;
-  }
-
   const execRecord =
     exec !== null && typeof exec === "object"
       ? (exec as { name?: unknown })
@@ -229,11 +218,12 @@ async function onPostExecute(
     role: "tool",
     content: text,
     ...(toolName === undefined ? {} : { toolName }),
+    ...(resultRecord?.isError === true ? { isError: true } : {}),
   };
 
   let crushed: ConversationMessage;
   try {
-    [crushed] = compressConversation([incoming, ...POST_EXECUTE_TAIL]);
+    [crushed] = compressConversation([incoming]);
   } catch {
     return decision;
   }

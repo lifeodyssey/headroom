@@ -344,6 +344,32 @@ describe("plugin surface", () => {
     });
   });
 
+  it("does not skip post-execute isError when the text exceeds the 8000 character cap", async () => {
+    await withHome(async () => {
+      const { ctx, listeners, emitted } = fakeCtx();
+      apply(ctx);
+
+      const overCap =
+        "Traceback (most recent call last):\nValueError: boom\n" +
+        "INFO padding line for size gate\n".repeat(250);
+      expect(overCap.length).toBeGreaterThan(8000);
+
+      const postExecute = handler(listeners, "tools/post-execute");
+      const decision = await postExecute(
+        { name: "bash" },
+        { content: textBlocks(overCap), isError: true },
+        () => Promise.resolve({ kind: "accept" }),
+      );
+
+      expect((decision as { kind?: string }).kind).toBe("accept");
+      const text = (decision as { content: Array<{ text: string }> }).content[0]
+        ?.text;
+      expect(text).toMatch(/<<compressor:[0-9a-f]{64}>>/);
+      expect(text?.length).toBeLessThan(overCap.length);
+      expect(emitted).toHaveLength(1);
+    });
+  });
+
   it("does not crush an excluded or short post-execute result and does not emit", async () => {
     await withHome(async () => {
       const { ctx, listeners, emitted } = fakeCtx();

@@ -65,13 +65,7 @@ function contentHasStrongErrorIndicators(text) {
     return false;
 }
 function looksLikeProtectedError(text) {
-    const trimmed = text.trimStart();
-    if (/^error\b/i.test(trimmed) || /^tool failed\b/i.test(trimmed)) {
-        return true;
-    }
-    if (/traceback \(most recent call last\)/i.test(text)) {
-        return true;
-    }
+    // Official ContentRouter: keyword path needs ≥2 distinct indicators.
     return contentHasStrongErrorIndicators(text);
 }
 function isProtectedErrorOutput(message) {
@@ -135,6 +129,9 @@ function crushMixed(original, query) {
     }
     return sections.map((section) => crushSection(section, query)).join("\n\n");
 }
+function hasCodeFenceSection(original) {
+    return splitIntoSections(original).some((section) => section.isCodeFence);
+}
 function visibleCrush(original, hash, query = "") {
     if (!nativeAvailable()) {
         warnMissingNative();
@@ -143,9 +140,9 @@ function visibleCrush(original, hash, query = "") {
     let crushed;
     if (isMixedContent(original)) {
         crushed = crushMixed(original, query);
-        // Mixed split can be a no-op (or grow via "\n\n" joins) on a 2-line
-        // run_code JSON blob. Whole-blob detect still gets log no-op → Text.
-        if (crushed.length >= original.length) {
+        // A 2-line run_code JSON blob can fail to shrink after mixed join.
+        // Whole-blob detect is only safe when there is no code fence to re-crush.
+        if (crushed.length >= original.length && !hasCodeFenceSection(original)) {
             crushed = crushByDetectedType(original, query).compressed;
         }
     }

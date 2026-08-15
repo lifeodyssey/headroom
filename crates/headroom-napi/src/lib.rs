@@ -71,7 +71,7 @@ fn log_config(config: Option<&Value>) -> LogCompressorConfig {
         dedupe_warnings: bool_or(config, "dedupe_warnings", defaults.dedupe_warnings),
         keep_summary_lines: bool_or(config, "keep_summary_lines", defaults.keep_summary_lines),
         max_total_lines: usize_or(config, "max_total_lines", defaults.max_total_lines),
-        enable_ccr: bool_or(config, "enable_ccr", defaults.enable_ccr),
+        enable_ccr: bool_or(config, "enable_ccr", false),
         min_lines_for_ccr: usize_or(config, "min_lines_for_ccr", defaults.min_lines_for_ccr),
         min_compression_ratio_for_ccr: f64_or(
             config,
@@ -194,7 +194,7 @@ fn search_config(config: Option<&Value>) -> SearchCompressorConfig {
             })
             .unwrap_or(defaults.context_keywords),
         boost_errors: bool_or(config, "boost_errors", defaults.boost_errors),
-        enable_ccr: bool_or(config, "enable_ccr", defaults.enable_ccr),
+        enable_ccr: bool_or(config, "enable_ccr", false),
         min_matches_for_ccr: usize_or(config, "min_matches_for_ccr", defaults.min_matches_for_ccr),
         min_compression_ratio_for_ccr: f64_or(
             config,
@@ -221,7 +221,7 @@ fn diff_config(config: Option<&Value>) -> DiffCompressorConfig {
             "always_keep_deletions",
             defaults.always_keep_deletions,
         ),
-        enable_ccr: bool_or(config, "enable_ccr", defaults.enable_ccr),
+        enable_ccr: bool_or(config, "enable_ccr", false),
         min_lines_for_ccr: usize_or(config, "min_lines_for_ccr", defaults.min_lines_for_ccr),
         min_compression_ratio_for_ccr: f64_or(
             config,
@@ -233,12 +233,13 @@ fn diff_config(config: Option<&Value>) -> DiffCompressorConfig {
 
 #[napi]
 pub fn crush_log(content: String, config: Option<Value>, bias: Option<f64>) -> CrushOut {
-    let store = InMemoryCcrStore::new();
-    let (result, _stats) = LogCompressor::new(log_config(config.as_ref())).compress_with_store(
-        &content,
-        bias.unwrap_or(1.0),
-        Some(&store),
-    );
+    let cfg = log_config(config.as_ref());
+    let (result, _stats) = if cfg.enable_ccr {
+        let store = InMemoryCcrStore::new();
+        LogCompressor::new(cfg).compress_with_store(&content, bias.unwrap_or(1.0), Some(&store))
+    } else {
+        LogCompressor::new(cfg).compress(&content, bias.unwrap_or(1.0))
+    };
     CrushOut {
         compressed: result.compressed.clone(),
         was_modified: result.compressed != result.original,
@@ -308,13 +309,22 @@ pub fn crush_search(
     bias: Option<f64>,
     config: Option<Value>,
 ) -> CrushOut {
-    let store = InMemoryCcrStore::new();
-    let (result, _stats) = SearchCompressor::new(search_config(config.as_ref())).compress_with_store(
-        &content,
-        context.as_deref().unwrap_or(""),
-        bias.unwrap_or(1.0),
-        Some(&store),
-    );
+    let cfg = search_config(config.as_ref());
+    let (result, _stats) = if cfg.enable_ccr {
+        let store = InMemoryCcrStore::new();
+        SearchCompressor::new(cfg).compress_with_store(
+            &content,
+            context.as_deref().unwrap_or(""),
+            bias.unwrap_or(1.0),
+            Some(&store),
+        )
+    } else {
+        SearchCompressor::new(cfg).compress(
+            &content,
+            context.as_deref().unwrap_or(""),
+            bias.unwrap_or(1.0),
+        )
+    };
     CrushOut {
         compressed: result.compressed.clone(),
         was_modified: result.compressed != result.original,
@@ -329,12 +339,21 @@ pub fn crush_search(
 
 #[napi]
 pub fn crush_diff(content: String, context: Option<String>, config: Option<Value>) -> CrushOut {
-    let store = InMemoryCcrStore::new();
-    let (result, _stats) = DiffCompressor::new(diff_config(config.as_ref())).compress_with_store(
-        &content,
-        context.as_deref().unwrap_or(""),
-        Some(&store),
-    );
+    let cfg = diff_config(config.as_ref());
+    let (result, _stats) = if cfg.enable_ccr {
+        let store = InMemoryCcrStore::new();
+        DiffCompressor::new(cfg).compress_with_store(
+            &content,
+            context.as_deref().unwrap_or(""),
+            Some(&store),
+        )
+    } else {
+        DiffCompressor::new(cfg).compress_with_store(
+            &content,
+            context.as_deref().unwrap_or(""),
+            None,
+        )
+    };
     CrushOut {
         compressed: result.compressed.clone(),
         was_modified: result.compressed_line_count != result.original_line_count,

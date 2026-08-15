@@ -415,6 +415,39 @@ describe("compressConversation", () => {
     expect(readdirSync(storeDir)).toEqual([]);
   });
 
+  it("does not treat a single error keyword as a protected output", () => {
+    const storeDir = tempStore();
+    const payload = Array.from(
+      { length: 80 },
+      (_, index) => `INFO compiling unit ${index} ok`,
+    ).join("\n") + "\nERROR cannot find symbol Foo\n";
+    const messages = withProtectedTail([
+      { role: "tool" as const, content: payload, toolName: "bash" },
+    ]);
+
+    const compressed = compressConversation(messages, { storeDir });
+    expect(compressed[0]?.compressed).toBe(true);
+    expect(retrieve(compressed[0]?.content, { storeDir })).toBe(payload);
+  });
+
+  it("crushes an isError tool result once it exceeds the 8000 character cap", () => {
+    const storeDir = tempStore();
+    const payload = `${errorTraceback()}\n${"INFO padding line for size gate\n".repeat(200)}`;
+    expect(payload.length).toBeGreaterThan(8000);
+    const messages = withProtectedTail([
+      {
+        role: "tool" as const,
+        content: payload,
+        toolName: "bash",
+        isError: true,
+      },
+    ]);
+
+    const compressed = compressConversation(messages, { storeDir });
+    expect(compressed[0]?.compressed).toBe(true);
+    expect(retrieve(compressed[0]?.content, { storeDir })).toBe(payload);
+  });
+
   it("leaves a short error traceback under 8000 characters verbatim", () => {
     const storeDir = tempStore();
     const traceback = errorTraceback();
