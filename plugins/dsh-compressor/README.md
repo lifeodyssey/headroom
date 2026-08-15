@@ -15,11 +15,7 @@ dsh plugin --profile web add ./plugins/dsh-compressor
 **GitHub subdirectory** (plugin is not the repo root)
 
 ```bash
-# after the plugin branch is on main
 dsh plugin --profile web add github:lifeodyssey/dsh-compressor#path:plugins/dsh-compressor
-
-# until then
-dsh plugin --profile web add 'github:lifeodyssey/dsh-compressor#feat/deepseek-harness-plugin&path:plugins/dsh-compressor'
 ```
 
 **npm** (after `npm publish` from this directory)
