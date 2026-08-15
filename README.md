@@ -25,11 +25,10 @@ flowchart LR
   D --> E[Model sees the useful part]
 ```
 
-Compressor code comes from [Headroom](https://github.com/headroomlabs-ai/headroom). Wired in today: Log / Smart / Text / Search / Diff.
+Compressor code comes from [Headroom](https://github.com/headroomlabs-ai/headroom). Wired in today: Log / Smart / Text / Search / Diff. The only crushers not wired in yet:
 
-- [ ] TODO: migrate the remaining compressors
-  - Code-aware (tree-sitter)
-  - Kompress (ONNX)
+- [ ] Code-aware (tree-sitter, source code)
+- [ ] Kompress (ONNX, long prose)
 
 ## Develop
 
@@ -41,4 +40,24 @@ pnpm test
 
 ## Contributing
 
-Plugin code lives in `plugins/dsh-compressor`, crushers in `crates/`. Open PRs on [lifeodyssey/dsh-compressor](https://github.com/lifeodyssey/dsh-compressor), not on upstream Headroom.
+Open PRs on this repo, not on Headroom.
+
+Plugin code is in `plugins/dsh-compressor` (Node 22+, pnpm):
+
+```bash
+cd plugins/dsh-compressor
+pnpm install
+pnpm test
+pnpm typecheck
+```
+
+Crushers live in `crates/`:
+
+```bash
+cargo test --workspace
+make test-parity
+```
+
+One change per PR. Plugin changes need tests; crusher changes need `cargo test`. Details: [CONTRIBUTING.md](CONTRIBUTING.md).
+
+This plugin is MIT. `crates/headroom-*` remains Apache-2.0.

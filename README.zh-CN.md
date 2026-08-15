@@ -25,11 +25,10 @@ flowchart LR
   D --> E[模型看到有用的那截]
 ```
 
-压缩器代码来自 [Headroom](https://github.com/headroomlabs-ai/headroom)。现在接上的是 Log / Smart / Text / Search / Diff。
+压缩器代码来自 [Headroom](https://github.com/headroomlabs-ai/headroom)。现在接上的是 Log / Smart / Text / Search / Diff。还没接进来的压缩器就这两个：
 
-- [ ] TODO：把其余压缩器迁进来
-  - Code-aware（tree-sitter）
-  - Kompress（ONNX）
+- [ ] Code-aware（tree-sitter，压源码）
+- [ ] Kompress（ONNX，压长散文）
 
 ## 开发
 
@@ -41,4 +40,24 @@ pnpm test
 
 ## Contributing
 
-改插件在 `plugins/dsh-compressor`，改压缩器在 `crates/`。PR 开到 [lifeodyssey/dsh-compressor](https://github.com/lifeodyssey/dsh-compressor)，不要开到 Headroom 上游。
+PR 开到本仓库，不要开到 Headroom。
+
+插件在 `plugins/dsh-compressor`（Node 22+、pnpm）：
+
+```bash
+cd plugins/dsh-compressor
+pnpm install
+pnpm test
+pnpm typecheck
+```
+
+改压缩器在 `crates/`：
+
+```bash
+cargo test --workspace
+make test-parity
+```
+
+一个 PR 只做一件事。改插件补测试，改压缩器过 `cargo test`。更细的步骤见 [CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)。
+
+本插件 MIT。`crates/headroom-*` 仍是 Apache-2.0。
