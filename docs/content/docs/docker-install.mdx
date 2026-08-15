@@ -75,7 +75,7 @@ docker run --rm -it \
 `wrap` is host-oriented in Docker-native mode:
 
 - the wrapper starts the Headroom proxy in Docker
-- container-side prep writes Headroom config, memory, and selected CLI context-tool setup into mounted host files
+- container-side prep writes Headroom config and memory into mounted host files
 - the target CLI itself is launched on the host by the wrapper
 
 Supported host wrap flows:
@@ -191,9 +191,6 @@ That keeps provider auth and runtime config working without maintaining a separa
 - The install scripts are idempotent: rerunning them refreshes the wrapper and image without duplicating shell profile blocks.
 - For persistent service and task installs, use the Python-native `headroom install ...` workflow — see [Persistent Installs](/docs/persistent-installs).
 - For Docker-native `headroom install ...`, the wrapper persists its profile manifest under `~/.headroom/deploy/<profile>/`.
-- The `rtk` binary is not bundled in the Docker image. Dashboard CLI-filtering
-  savings figures show as "not installed" (not `0`) until `rtk` is installed
-  inside the container.
 
 ## Next steps
 

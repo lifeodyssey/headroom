@@ -26,7 +26,9 @@ const response = await openai.chat.completions.create({
 
 ## How It Works
 
-The TypeScript SDK is an HTTP client. When you call `compress()`, it sends your messages to the Headroom proxy's `POST /v1/compress` endpoint. The proxy runs the full compression pipeline (SmartCrusher, ContentRouter, CacheAligner, etc.) and returns compressed messages. No compression logic runs in Node.js — all the heavy lifting happens in the proxy.
+The TypeScript SDK is an HTTP client. When you call `compress()`, it sends your messages to the Headroom proxy's `POST /v1/compress` endpoint. The proxy runs the compression pipeline (ContentRouter and its compressors, including SmartCrusher) and returns compressed messages. No compression logic runs in Node.js — all the heavy lifting happens in the proxy.
+
+The proxy must be reachable on **loopback**: `/v1/compress` rejects remote callers with `404` unless it was started with `HEADROOM_COMPRESS_ALLOW_REMOTE=1`.
 
 ```
 Your TypeScript App
@@ -37,7 +39,7 @@ headroom-ai (npm)  ← HTTP client
     │
     │  POST /v1/compress
     ▼
-Headroom Proxy / Cloud  ← compression pipeline (Python)
+Headroom Proxy (loopback)  ← compression pipeline (Python)
     │
     │  compressed messages
     ▼

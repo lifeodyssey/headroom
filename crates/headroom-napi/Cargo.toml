@@ -1,0 +1,32 @@
+[package]
+name = "headroom-napi"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "N-API bindings exposing headroom-core crushers to the DSH plugin."
+
+[lib]
+crate-type = ["cdylib"]
+name = "dsh_compressor_native"
+test = false
+doctest = false
+bench = false
+
+[dependencies]
+# Official crushers live in headroom-core. `ml` stays off so the DSH
+# addon does not ship ONNX/Magika. `code` stays off so tree-sitter
+# CodeAware is not linked into the plugin binary.
+headroom-core = { path = "../headroom-core", default-features = false }
+# napi-rs is the maintained N-API stack (napi-rs org). DSH already loads
+# `@napi-rs/*` addons. Native code: one cdylib per platform, no install
+# network. 2.16: N-API 8 + serde-json objects; 3.x would force a CLI
+# scaffold we do not need.
+napi = { version = "2.16", default-features = false, features = ["napi8", "serde-json"] }
+napi-derive = "2.16"
+serde_json = { workspace = true }
+
+[build-dependencies]
+# Companion of napi 2.16; sets cdylib link flags. No runtime network.
+napi-build = "2.1"

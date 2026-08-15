@@ -1,3 +1,4 @@
+#![cfg(feature = "code")]
 //! Byte-parity integration test for the CodeCompressor Rust port.
 //!
 //! Runs the production [`CodeAwareCompressor`] against the fixtures recorded

@@ -22,6 +22,7 @@ REQUIRED_SECTIONS = (
     "Changes Made",
     "Testing",
     "Real Behavior Proof",
+    "Runtime Rollout Safety",
     "Review Readiness",
 )
 PROOF_FIELDS = (
@@ -29,6 +30,15 @@ PROOF_FIELDS = (
     "Exact command / steps",
     "Observed result",
     "Not tested",
+)
+ROLLOUT_FIELDS = (
+    "Rollout-managed feature(s)",
+    "Minimum rollout channel",
+    "Stable/default behavior changed",
+    "Kill switch / disable path",
+    "Unsafe override required",
+    "Qualification impact",
+    "Rollback path",
 )
 
 SECTION_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
@@ -192,6 +202,12 @@ def validate_pull_request(event: dict[str, Any]) -> GovernanceReport:
     for field_name in PROOF_FIELDS:
         if proof_section and not proof_values.get(field_name):
             problems.append(f"Fill in `Real Behavior Proof` → `{field_name}`.")
+
+    rollout_section = sections.get("Runtime Rollout Safety", "")
+    rollout_values = proof_field_values(rollout_section)
+    for field_name in ROLLOUT_FIELDS:
+        if rollout_section and not rollout_values.get(field_name):
+            problems.append(f"Fill in `Runtime Rollout Safety` → `{field_name}`.")
 
     readiness_checked = normalize_checkbox_map(checked_items(sections.get("Review Readiness", "")))
     has_self_review = "i have performed a self-review" in readiness_checked

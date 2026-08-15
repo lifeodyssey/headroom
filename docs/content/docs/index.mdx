@@ -17,7 +17,8 @@ const messages = [
 ];
 
 const result = await compress(messages, { model: 'gpt-4o' });
-console.log(`Saved ${result.tokensSaved} tokens (${(result.compressionRatio * 100).toFixed(0)}%)`);
+// compressionRatio is tokensAfter / tokensBefore, so savings is 1 - ratio.
+console.log(`Saved ${result.tokensSaved} tokens (${((1 - result.compressionRatio) * 100).toFixed(0)}%)`);
 ```
 </Tab>
 <Tab value="Python">

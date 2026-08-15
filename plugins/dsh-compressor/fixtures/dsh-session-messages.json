@@ -1,0 +1,14 @@
+[
+  {
+    "role": "user",
+    "content": "Create a file named ALIVE.txt in this workspace root containing only the word ALIVE and a trailing newline. Do not run git. Do not write any other files. When done, reply with exactly ALIVE."
+  },
+  {
+    "role": "user",
+    "content": "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nCurrent DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: \"/workspace\". Some platform temporary areas may also be writable.\n\nApproval policy: ask. Operations that require approval may ask through the configured answerers; without an available answerer, the request fails closed."
+  },
+  {
+    "role": "assistant",
+    "content": "ALIVE"
+  }
+]

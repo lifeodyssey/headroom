@@ -3,7 +3,7 @@ title: OpenCode Integration
 description: Route OpenCode traffic through Headroom for token compression, MCP tools, and cached model access. One command to wrap, one to unwrap.
 ---
 
-Use `headroom wrap opencode` to route OpenCode LLM traffic through the Headroom proxy with a single command. The wrapper starts or reuses the proxy, writes OpenCode config, injects Headroom MCP tools, adds RTK context filtering, and launches OpenCode with the generated config.
+Use `headroom wrap opencode` to route OpenCode LLM traffic through the Headroom proxy with a single command. The wrapper starts or reuses the proxy, writes OpenCode config, injects Headroom MCP tools, and launches OpenCode with the generated config.
 
 The `headroom-opencode` npm package also exports a native OpenCode plugin. The plugin can be used directly from OpenCode config when you want in-process transport interception plus the Headroom retrieve tool.
 
@@ -27,7 +27,6 @@ headroom unwrap opencode
 | Provider injection | Writes a `headroom` provider using `@ai-sdk/openai-compatible` into `opencode.json`, pointing at `http://127.0.0.1:<port>/v1` |
 | Runtime env | Sets `OPENCODE_CONFIG_CONTENT` with provider, plugin, and optional local MCP config so OpenCode picks up Headroom at launch |
 | Provider compatibility | Leaves `OPENAI_BASE_URL` and `ANTHROPIC_BASE_URL` untouched so OpenCode `/connect` providers keep their own routing |
-| Context tool | Injects RTK (or `lean-ctx`) instructions into `~/.config/opencode/AGENTS.md` and project `AGENTS.md` |
 | MCP setup | Registers the Headroom MCP server (`headroom_compress`, `headroom_retrieve`, `headroom_stats`) |
 | Serena MCP | Optionally registers Serena code graph tools (`--no-serena` to skip) |
 | Backup | Snapshots `opencode.json` to `opencode.json.headroom-backup` before making any changes |
@@ -38,7 +37,6 @@ headroom unwrap opencode
 ```bash
 headroom wrap opencode \
   --port 8787 \
-  --no-rtk \
   --no-mcp \
   --no-serena \
   --code-graph \
@@ -71,7 +69,6 @@ The default model is `headroom/claude-sonnet-4-6`. Change it in `opencode.json` 
 |---|---|
 | `OPENCODE_CONFIG_CONTENT` | JSON payload with provider, plugin, and optional local MCP config injected by `wrap` |
 | `HEADROOM_PROXY_URL` | Proxy URL passed to Headroom MCP when a non-default port is used, and to the native plugin when configured |
-| `HEADROOM_CONTEXT_TOOL` | Set to `lean-ctx` to use lean-ctx instead of RTK |
 
 ## Failure Learning
 

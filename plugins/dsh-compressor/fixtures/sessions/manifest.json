@@ -1,0 +1,126 @@
+{
+  "generatedFrom": "local ~/.dsh/sessions (redacted)",
+  "minBlobChars": 2000,
+  "fixtures": [
+    {
+      "name": "session-000.jsonl.zstd",
+      "sourceHash": "bda9e5335a82",
+      "events": 15351,
+      "compressiblePayloadChars": 215502
+    },
+    {
+      "name": "session-001.jsonl.zstd",
+      "sourceHash": "2aedf120bc74",
+      "events": 13875,
+      "compressiblePayloadChars": 207230
+    },
+    {
+      "name": "session-002.jsonl.zstd",
+      "sourceHash": "7ac2d4811147",
+      "events": 15606,
+      "compressiblePayloadChars": 204782
+    },
+    {
+      "name": "session-003.jsonl.zstd",
+      "sourceHash": "2d27ce71af9c",
+      "events": 19809,
+      "compressiblePayloadChars": 200059
+    },
+    {
+      "name": "session-004.jsonl.zstd",
+      "sourceHash": "b28ce56b4e2b",
+      "events": 18833,
+      "compressiblePayloadChars": 196257
+    },
+    {
+      "name": "session-005.jsonl.zstd",
+      "sourceHash": "4749a50451b4",
+      "events": 18756,
+      "compressiblePayloadChars": 194828
+    },
+    {
+      "name": "session-006.jsonl.zstd",
+      "sourceHash": "4d9939c004db",
+      "events": 13106,
+      "compressiblePayloadChars": 194624
+    },
+    {
+      "name": "session-007.jsonl.zstd",
+      "sourceHash": "15011f20ba88",
+      "events": 12560,
+      "compressiblePayloadChars": 193021
+    },
+    {
+      "name": "session-008.jsonl.zstd",
+      "sourceHash": "736730bf227b",
+      "events": 15118,
+      "compressiblePayloadChars": 186164
+    },
+    {
+      "name": "session-009.jsonl.zstd",
+      "sourceHash": "2c274e8d6348",
+      "events": 17659,
+      "compressiblePayloadChars": 185372
+    },
+    {
+      "name": "session-010.jsonl.zstd",
+      "sourceHash": "a03d9f84b2d7",
+      "events": 8229,
+      "compressiblePayloadChars": 180909
+    },
+    {
+      "name": "session-011.jsonl.zstd",
+      "sourceHash": "f83a88607906",
+      "events": 19468,
+      "compressiblePayloadChars": 180519
+    },
+    {
+      "name": "session-012.jsonl.zstd",
+      "sourceHash": "158b3146035f",
+      "events": 16269,
+      "compressiblePayloadChars": 177854
+    },
+    {
+      "name": "session-013.jsonl.zstd",
+      "sourceHash": "776cbf3e3329",
+      "events": 18762,
+      "compressiblePayloadChars": 162272
+    },
+    {
+      "name": "session-014.jsonl.zstd",
+      "sourceHash": "cf0ff8ace7dc",
+      "events": 13865,
+      "compressiblePayloadChars": 158981
+    },
+    {
+      "name": "session-015.jsonl.zstd",
+      "sourceHash": "d317d9c47942",
+      "events": 9080,
+      "compressiblePayloadChars": 146880
+    },
+    {
+      "name": "session-016.jsonl.zstd",
+      "sourceHash": "8a0c8373d461",
+      "events": 19926,
+      "compressiblePayloadChars": 145753
+    },
+    {
+      "name": "session-017.jsonl.zstd",
+      "sourceHash": "3fa705a2f045",
+      "events": 19632,
+      "compressiblePayloadChars": 141780
+    },
+    {
+      "name": "session-018.jsonl.zstd",
+      "sourceHash": "f64281b8d2f7",
+      "events": 11045,
+      "compressiblePayloadChars": 136731
+    },
+    {
+      "name": "session-019.jsonl.zstd",
+      "sourceHash": "c4ae8feab677",
+      "events": 11515,
+      "compressiblePayloadChars": 135492
+    }
+  ]
+}

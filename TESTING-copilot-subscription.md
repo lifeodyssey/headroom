@@ -107,7 +107,7 @@ There is **no native Windows wheel yet**, so pick one:
 
 **A. Mechanism test (easiest — Docker Desktop or WSL2):**
 ```powershell
-$env:HEADROOM_DOCKER_IMAGE = "ghcr.io/chopratejas/headroom:<branch-tag>"   # ask the maintainer for the tag
+$env:HEADROOM_DOCKER_IMAGE = "ghcr.io/headroomlabs-ai/headroom:<branch-tag>"   # ask the maintainer for the tag
 # run the Docker-native installer (scripts/install.ps1), then:
 $env:GITHUB_COPILOT_TOKEN = "<your-token>"
 headroom wrap copilot --subscription -- --model gpt-4o -p "Reply with: HEADROOM_OK"

@@ -1,0 +1,58 @@
+{
+  "name": "dsh-compressor",
+  "version": "0.1.0",
+  "description": "In-process DeepSeek Harness context compression bundle",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "native",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "build:native": "cargo build -p headroom-napi --release && node scripts/copy-native.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "context-compression"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lifeodyssey/dsh-compressor.git",
+    "directory": "plugins/dsh-compressor"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "Apache-2.0",
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": "0.1.0-rc.6"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-session": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-system-prompt": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-tools": "0.1.0-rc.6",
+    "@types/node": "^24.3.0",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

@@ -391,6 +391,34 @@ fn tokens_icu(text: &str) -> Vec<String> {
     out
 }
 
+/// True for a precomposed Hangul syllable. Korean text is overwhelmingly
+/// precomposed syllables in this block.
+fn is_hangul(c: char) -> bool {
+    matches!(c as u32, 0xAC00..=0xD7AF)
+}
+
+/// Relevance forms of a token list: each token, plus -- for a Hangul token --
+/// its overlapping character bigrams. ICU ships no Korean dictionary, so it
+/// splits Korean on spaces into coarse eojeol and a query eojeol only matches a
+/// doc eojeol verbatim; the sub-eojeol bigrams give partial matching. Used for
+/// relevance ONLY (salience/dedup keep the original tokens). Non-Hangul tokens
+/// (zh/ja ICU words, ASCII) pass through unchanged, so those paths are untouched.
+fn augment_hangul(toks: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::with_capacity(toks.len());
+    for t in toks {
+        if t.chars().any(is_hangul) {
+            let chars: Vec<char> = t.chars().collect();
+            for w in chars.windows(2) {
+                if w.iter().all(|&c| is_hangul(c)) {
+                    out.push(w.iter().collect());
+                }
+            }
+        }
+        out.push(t.clone());
+    }
+    out
+}
+
 /// BM25 relevance over the segments' ICU word tokens. This is INTENTIONALLY a
 /// separate scorer from the shared [`BM25Scorer`](crate::relevance): that one is
 /// parity-locked to Python and tokenizes with an ASCII-only regex, so it scores
@@ -402,12 +430,14 @@ fn tokens_icu(text: &str) -> Vec<String> {
 fn relevance_cjk(seg_tokens: &[Vec<String>], context: &str) -> Vec<f64> {
     use std::collections::HashMap;
     let n = seg_tokens.len();
-    let qtokens: HashSet<String> = tokens(context).into_iter().collect();
+    // Augment Hangul tokens with sub-eojeol bigrams for relevance only.
+    let seg: Vec<Vec<String>> = seg_tokens.iter().map(|t| augment_hangul(t)).collect();
+    let qtokens: HashSet<String> = augment_hangul(&tokens(context)).into_iter().collect();
     if n == 0 || qtokens.is_empty() {
         return vec![0.0; n];
     }
     let mut df: HashMap<&str, usize> = HashMap::new();
-    for toks in seg_tokens {
+    for toks in &seg {
         let uniq: HashSet<&str> = toks.iter().map(|s| s.as_str()).collect();
         for t in uniq {
             *df.entry(t).or_insert(0) += 1;
@@ -419,9 +449,9 @@ fn relevance_cjk(seg_tokens: &[Vec<String>], context: &str) -> Vec<f64> {
         (((nf - d + 0.5) / (d + 0.5)) + 1.0).ln()
     };
     let (k1, b) = (1.2_f64, 0.75_f64);
-    let avgdl = (seg_tokens.iter().map(|t| t.len()).sum::<usize>() as f64 / nf).max(1.0);
+    let avgdl = (seg.iter().map(|t| t.len()).sum::<usize>() as f64 / nf).max(1.0);
     let mut out = vec![0.0f64; n];
-    for (i, toks) in seg_tokens.iter().enumerate() {
+    for (i, toks) in seg.iter().enumerate() {
         let mut tf: HashMap<&str, usize> = HashMap::new();
         for t in toks {
             *tf.entry(t.as_str()).or_insert(0) += 1;
@@ -470,8 +500,32 @@ fn shingles(words: &[String], k: usize) -> HashSet<String> {
 
 /// A word carries specific, hard-to-reconstruct information if it has a digit,
 /// is an error/status keyword, is ALLCAPS (2+ letters), or is a dotted
-/// identifier (`foo.bar`).
+/// identifier (`foo.bar`). It is also salient if it is a "do-not-drop" anchor
+/// that agent workflows depend on: a CLI flag (`-v`, `--verbose`), an absolute
+/// path (`/etc/nginx`, `~/notes`), or a URL (`https://...`). The anchor checks
+/// are deliberately narrow to avoid making ordinary English words salient.
 fn is_salient(word: &str) -> bool {
+    // Cheapest first: single-byte prefix peeks, no allocation or full scan.
+
+    // CLI flag: `-v`, `--verbose`. Requires an alphabetic char so a bare
+    // `-`/`--` (or a stray dash) is not treated as an anchor. Hyphenated
+    // English like `well-known` does not start with `-`, so it is unaffected.
+    if word.starts_with('-') && word.chars().any(|c| c.is_ascii_alphabetic()) {
+        return true;
+    }
+
+    // Absolute path: `/etc/nginx`, `~/notes.md`. The length guard rejects a
+    // lone `/`. Relative tokens (`src/main`, `and/or`) don't start with `/`
+    // or `~/`, so they stay non-salient.
+    if (word.starts_with('/') || word.starts_with("~/")) && word.chars().count() > 1 {
+        return true;
+    }
+
+    // URL: any scheme-bearing token (`http://`, `https://`, `ws://`, ...).
+    if word.contains("://") {
+        return true;
+    }
+
     if word.chars().any(|c| c.is_ascii_digit()) {
         return true;
     }
@@ -512,6 +566,40 @@ mod tests {
             .map(|i| format!("Sentence number {i} describes a distinct topic {i} in some detail."))
             .collect::<Vec<_>>()
             .join(" ")
+    }
+
+    #[test]
+    fn augment_hangul_adds_sub_eojeol_bigrams() {
+        // A Hangul token yields its overlapping bigrams plus itself; a non-Hangul
+        // token passes through unchanged (so zh/ja/ASCII paths are untouched).
+        let aug = augment_hangul(&["데이터".to_string()]);
+        assert!(aug.contains(&"데이".to_string()));
+        assert!(aug.contains(&"이터".to_string()));
+        assert!(aug.contains(&"데이터".to_string()));
+        assert_eq!(
+            augment_hangul(&["database".to_string()]),
+            vec!["database".to_string()]
+        );
+    }
+
+    #[test]
+    fn korean_relevance_matches_sub_eojeol() {
+        // Query "데이터" (data) vs a segment holding "데이터베이스" (database):
+        // different eojeol, shared sub-eojeol bigrams. Coarse-eojeol BM25 alone
+        // scores 0; the bigram augment gives the right segment nonzero relevance.
+        let seg_tokens = vec![
+            tokens("데이터베이스 연결 정보"),
+            tokens("네트워크 설정 확인"),
+        ];
+        let rel = relevance_cjk(&seg_tokens, "데이터");
+        assert!(
+            rel[0] > 0.0,
+            "sub-eojeol bigram match should be nonzero: {rel:?}"
+        );
+        assert!(
+            rel[0] > rel[1],
+            "the 데이터베이스 segment must outscore the unrelated one: {rel:?}"
+        );
     }
 
     #[test]
@@ -656,6 +744,61 @@ mod tests {
         );
         assert!(r.compressed_tokens < r.original_tokens);
         assert!(r.compression_ratio > 0.0 && r.compression_ratio <= 1.0);
+    }
+
+    #[test]
+    fn anchors_are_salient() {
+        // URLs, CLI flags, and absolute paths are "do-not-drop" anchors.
+        assert!(is_salient("https://example.com/x"));
+        assert!(is_salient("--verbose"));
+        assert!(is_salient("-v"));
+        assert!(is_salient("/etc/nginx/nginx.conf"));
+        assert!(is_salient("~/notes.md"));
+    }
+
+    #[test]
+    fn anchor_rules_do_not_over_keep() {
+        // Ordinary/relative tokens must stay non-salient (no over-keeping).
+        assert!(!is_salient("and/or")); // no leading '/'
+        assert!(!is_salient("well-known")); // does not start with '-'
+        assert!(!is_salient("hello"));
+        assert!(!is_salient("the"));
+        assert!(!is_salient("-")); // bare dash, no alphabetic char
+        assert!(!is_salient("/")); // lone slash
+        assert!(!is_salient("src/main")); // relative path: no leading '/', no dot
+    }
+
+    #[test]
+    fn anchor_sentence_survives_aggressive_compression() {
+        // 40 anchor-free filler sentences of similar length/recency, with a
+        // single middle sentence carrying an absolute-path anchor. Under
+        // aggressive compression the anchor sentence must survive while a
+        // comparable filler sentence is dropped. Deterministic input.
+        let anchor_idx = 20;
+        let content = (0..40)
+            .map(|i| {
+                if i == anchor_idx {
+                    format!("Config value alpha bravo lives in /etc/service/config number {i}.")
+                } else {
+                    format!("Config value alpha bravo charlie delta echo foxtrot golf number {i}.")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        let r = TextCrusher::default().compress(&content, "", Some(0.3));
+        assert!(r.compressed_tokens < r.original_tokens, "must compress");
+        assert!(
+            r.compressed.contains("/etc/service/config"),
+            "anchor-bearing sentence must survive: {}",
+            r.compressed
+        );
+        // A comparable filler sentence far from the anchor is dropped, so the
+        // anchor's survival is due to salience, not wholesale retention.
+        assert!(
+            !r.compressed.contains("number 3."),
+            "a comparable filler sentence should be dropped: {}",
+            r.compressed
+        );
     }
 
     #[test]

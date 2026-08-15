@@ -27,7 +27,7 @@ irm https://raw.githubusercontent.com/chopratejas/headroom/main/scripts/install.
 ## What the installer does
 
 1. Verifies Docker is installed and available.
-2. Pulls `ghcr.io/chopratejas/headroom:latest` by default, or reuses / pulls `HEADROOM_DOCKER_IMAGE` when you set a custom image override.
+2. Pulls `ghcr.io/headroomlabs-ai/headroom:latest` by default, or reuses / pulls `HEADROOM_DOCKER_IMAGE` when you set a custom image override.
 3. Installs a `headroom` wrapper into `~/.local/bin` or `~/bin`.
 4. Updates shell startup files so the wrapper directory is on `PATH`.
 
@@ -41,7 +41,7 @@ The wrapper keeps Headroom inside Docker and mounts host state back into the con
 
 Port `8787` stays the default, so `http://localhost:8787` works the same way as a native install.
 
-Published releases also push versioned GHCR tags such as `ghcr.io/chopratejas/headroom:0.5.26`, and those images are built with the same synced package version used for the matching PyPI and npm release.
+Published releases also push versioned GHCR tags such as `ghcr.io/headroomlabs-ai/headroom:0.35.0`, and those images are built with the same synced package version used for the matching PyPI and npm release.
 
 ## How the wrapper behaves
 
@@ -63,7 +63,7 @@ docker run --rm -it \
   -p 8787:8787 \
   -v "$PWD:/workspace" \
   -w /workspace \
-  ghcr.io/chopratejas/headroom:latest \
+  ghcr.io/headroomlabs-ai/headroom:latest \
   headroom proxy --host 0.0.0.0 --port 8787
 ```
 
@@ -72,7 +72,7 @@ docker run --rm -it \
 `wrap` is host-oriented in Docker-native mode:
 
 - the wrapper starts the Headroom proxy in Docker
-- container-side prep writes Headroom config, memory, and `rtk` guidance into mounted host files
+- container-side prep writes Headroom config and memory into mounted host files
 - the target CLI itself is launched on the host by the wrapper
 
 Supported host wrap flows:

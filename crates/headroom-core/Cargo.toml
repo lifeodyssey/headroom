@@ -22,7 +22,7 @@ tokenizers = "0.22"
 # with `rustls` (no system OpenSSL dep — keeps the binary static-linkable for
 # AWS deploys). `from_pretrained` is called once at startup, so blocking is
 # fine; if a tokio caller needs it later we can wrap in `spawn_blocking`.
-hf-hub = { version = "0.4", default-features = false, features = ["ureq", "rustls-tls"] }
+hf-hub = { version = "0.5", default-features = false, features = ["ureq", "rustls-tls"] }
 # `md5` for the CCR cache_key. Python's compression_store hashes the original
 # diff with MD5 truncated to 24 hex chars; we must match byte-for-byte.
 md-5 = "0.10"
@@ -125,7 +125,7 @@ blake3 = "1"
 # image may lag behind. Sub-1 MB binary cost. WAL is enabled at
 # connection-open time (see `ccr/backends/sqlite.rs`); no extra feature
 # flags required.
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 # `redis` for the optional multi-worker CCR backend. Cfg-gated behind
 # the `redis` feature so deploys that don't need it pay no compile
 # cost. Default features include the sync `Connection` API used in
@@ -146,15 +146,15 @@ http = "1"
 # samples × 8 languages) confirmed 100% identical node-type + line-span
 # trees at these exact pins. Bumping any pin requires re-running the
 # canary and re-recording the code_aware_compressor fixtures.
-tree-sitter = "=0.25.2"
-tree-sitter-python = "=0.25.0"
-tree-sitter-javascript = "=0.25.0"
-tree-sitter-typescript = "=0.23.2"
-tree-sitter-go = "=0.25.0"
-tree-sitter-rust = "=0.24.2"
-tree-sitter-java = "=0.23.5"
-tree-sitter-c = "=0.24.2"
-tree-sitter-cpp = "=0.23.4"
+tree-sitter = { version = "=0.25.2", optional = true }
+tree-sitter-python = { version = "=0.25.0", optional = true }
+tree-sitter-javascript = { version = "=0.25.0", optional = true }
+tree-sitter-typescript = { version = "=0.23.2", optional = true }
+tree-sitter-go = { version = "=0.25.0", optional = true }
+tree-sitter-rust = { version = "=0.24.2", optional = true }
+tree-sitter-java = { version = "=0.23.5", optional = true }
+tree-sitter-c = { version = "=0.24.2", optional = true }
+tree-sitter-cpp = { version = "=0.23.4", optional = true }
 
 # Load ONNX Runtime dynamically on every platform. The alternative,
 # `ort-download-binaries-*`, statically links Microsoft's prebuilt ORT:
@@ -188,6 +188,19 @@ ort = { version = "=2.0.0-rc.12", default-features = false, optional = true, fea
 # of this change — flagged in the PR).
 default = ["ml"]
 ml = ["dep:ort", "dep:fastembed", "dep:magika"]
+# CodeAware / tree-sitter. Off for the DSH napi addon. Parity crate
+# enables it when replaying code_aware fixtures.
+code = [
+    "dep:tree-sitter",
+    "dep:tree-sitter-python",
+    "dep:tree-sitter-javascript",
+    "dep:tree-sitter-typescript",
+    "dep:tree-sitter-go",
+    "dep:tree-sitter-rust",
+    "dep:tree-sitter-java",
+    "dep:tree-sitter-c",
+    "dep:tree-sitter-cpp",
+]
 # Compile in the Redis CCR backend. Enable for multi-worker deployments
 # that want a shared CCR store with no sticky-session at the LB. The
 # SQLite backend (always compiled) is the production default for
@@ -196,7 +209,7 @@ redis = ["dep:redis"]
 
 [dev-dependencies]
 proptest = "1"
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 tempfile = "3"
 
 [[bench]]

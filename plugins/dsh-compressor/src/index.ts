@@ -1,0 +1,261 @@
+import { defineTool, type ToolDefinition } from "@deepseek-ai/dsh-tools";
+
+import {
+  compressConversation,
+  markRetrieveRegistered,
+  retrieve,
+  type ConversationMessage,
+} from "./compress.js";
+import {
+  rewriteSessionToolResults,
+  type SurfaceSession,
+} from "./session-rewrite.js";
+
+export {
+  compressConversation,
+  retrieve,
+  type CompressOptions,
+  type ConversationMessage,
+  type MessageRole,
+} from "./compress.js";
+
+export const name = "dsh-compressor";
+export const inject = ["tools", "systemPrompt"];
+export const CONTEXT_COMPRESSION_AFTER = "contextCompression/after";
+
+const LOCATOR_PROMPT =
+  "Compressor locators such as <<compressor:hash>> are retrieve handles, not filesystem paths. Do not Read them. Call compressor_retrieve with the locator or its hash.";
+
+type RetrieveArgs = {
+  locator: string;
+};
+
+type PluginContext = {
+  on?: (event: string, handler: (...args: unknown[]) => unknown) => unknown;
+  emit?: (event: string, payload?: unknown) => unknown;
+  tools?: {
+    register?: (definition: ToolDefinition) => (() => void) | unknown;
+  };
+  systemPrompt?: {
+    section?: (section: {
+      name: string;
+      order: number;
+      text: string;
+    }) => unknown;
+  };
+};
+
+function flattenText(content: unknown): string | undefined {
+  if (typeof content === "string") {
+    return content;
+  }
+  if (!Array.isArray(content)) {
+    return undefined;
+  }
+  const parts: string[] = [];
+  for (const block of content) {
+    if (block === null || typeof block !== "object") {
+      return undefined;
+    }
+    const item = block as { type?: unknown; text?: unknown };
+    if (item.type !== "text" || typeof item.text !== "string") {
+      return undefined;
+    }
+    parts.push(item.text);
+  }
+  return parts.join("");
+}
+
+function sessionFromPayload(payload: unknown): SurfaceSession | undefined {
+  if (payload === null || typeof payload !== "object") {
+    return undefined;
+  }
+  const agent = (payload as { agent?: { session?: unknown } }).agent;
+  const session = agent?.session;
+  if (session === null || typeof session !== "object") {
+    return undefined;
+  }
+  return session as SurfaceSession;
+}
+
+function emitAfter(
+  ctx: PluginContext,
+  source: "agent/pre-step" | "tools/post-execute",
+  messages: ConversationMessage[],
+): void {
+  ctx.emit?.(CONTEXT_COMPRESSION_AFTER, { source, messages });
+}
+
+function registerRetrieve(ctx: PluginContext): boolean {
+  if (typeof ctx.tools?.register !== "function") {
+    return false;
+  }
+
+  try {
+    const disposer = ctx.tools.register(
+      defineTool({
+        name: "compressor_retrieve",
+        description:
+          "Restore original conversation text for a compressor locator or content hash. The locator is not a filesystem path.",
+        parameters: {
+          locator: {
+            type: "string",
+            required: true,
+            description:
+              "Full <<compressor:hash>> locator or the bare content hash.",
+          },
+        },
+        output: {
+          schema: { type: "string" },
+          render: (_args, value) => [{ type: "text", text: value }],
+        },
+        async execute(args: RetrieveArgs) {
+          return retrieve(args.locator);
+        },
+      }),
+    );
+    // Official ToolRuntime.register returns a disposer. A no-op register is not success.
+    return typeof disposer === "function";
+  } catch {
+    return false;
+  }
+}
+
+function contributePrompt(ctx: PluginContext): void {
+  ctx.systemPrompt?.section?.({
+    name: "dsh-compressor:locators",
+    order: 180,
+    text: LOCATOR_PROMPT,
+  });
+}
+
+async function onPreStep(
+  ctx: PluginContext,
+  payload: unknown,
+  next: unknown,
+): Promise<unknown> {
+  const decision =
+    typeof next === "function"
+      ? await (next as () => Promise<unknown>)()
+      : { kind: "enter", messages: [] };
+  if (
+    decision !== null &&
+    typeof decision === "object" &&
+    (decision as { kind?: unknown }).kind === "reject"
+  ) {
+    return decision;
+  }
+
+  const session = sessionFromPayload(payload);
+  if (session === undefined) {
+    return decision;
+  }
+
+  let result: { rewritten: ConversationMessage[]; replaced: number };
+  try {
+    result = rewriteSessionToolResults(session);
+  } catch {
+    return decision;
+  }
+
+  if (result.replaced > 0) {
+    emitAfter(ctx, "agent/pre-step", result.rewritten);
+  }
+  return decision;
+}
+
+async function onPostExecute(
+  ctx: PluginContext,
+  exec: unknown,
+  result: unknown,
+  next: unknown,
+): Promise<unknown> {
+  const decision = (
+    typeof next === "function"
+      ? await (next as () => Promise<unknown>)()
+      : { kind: "accept" }
+  ) as {
+    kind?: unknown;
+    content?: unknown;
+    value?: unknown;
+    additionalContexts?: unknown;
+  };
+
+  if (decision.kind !== "accept" || Object.hasOwn(decision, "value")) {
+    return decision;
+  }
+
+  const resultRecord =
+    result !== null && typeof result === "object"
+      ? (result as {
+          content?: unknown;
+          isError?: unknown;
+          toolName?: unknown;
+        })
+      : undefined;
+  const execRecord =
+    exec !== null && typeof exec === "object"
+      ? (exec as { name?: unknown })
+      : undefined;
+  const toolName =
+    typeof execRecord?.name === "string"
+      ? execRecord.name
+      : typeof resultRecord?.toolName === "string"
+        ? resultRecord.toolName
+        : undefined;
+  const rawContent = decision.content ?? resultRecord?.content;
+  const text = flattenText(rawContent);
+  if (text === undefined) {
+    return decision;
+  }
+
+  const incoming: ConversationMessage = {
+    role: "tool",
+    content: text,
+    ...(toolName === undefined ? {} : { toolName }),
+    ...(resultRecord?.isError === true ? { isError: true } : {}),
+  };
+
+  let crushed: ConversationMessage;
+  try {
+    [crushed] = compressConversation([incoming]);
+  } catch {
+    return decision;
+  }
+
+  if (crushed === undefined || crushed.content === text) {
+    return decision;
+  }
+
+  emitAfter(ctx, "tools/post-execute", [crushed]);
+  return {
+    kind: "accept",
+    content: [{ type: "text", text: crushed.content }],
+    ...(Object.hasOwn(decision, "additionalContexts")
+      ? { additionalContexts: decision.additionalContexts }
+      : {}),
+  };
+}
+
+function hangHooks(ctx: PluginContext): void {
+  if (typeof ctx.on !== "function") {
+    return;
+  }
+
+  ctx.on("agent/pre-step", (payload, next) => onPreStep(ctx, payload, next));
+  ctx.on("tools/post-execute", (exec, result, next) =>
+    onPostExecute(ctx, exec, result, next),
+  );
+}
+
+export function apply(ctx: object): void {
+  const plugin = ctx as PluginContext;
+  if (
+    registerRetrieve(plugin) &&
+    typeof plugin.systemPrompt?.section === "function"
+  ) {
+    markRetrieveRegistered();
+    contributePrompt(plugin);
+  }
+  hangHooks(plugin);
+}

@@ -73,13 +73,15 @@ When the LLM calls `headroom_retrieve`:
 
 The client never sees CCR tool calls on the Anthropic and OpenAI proxy paths; Headroom resolves them transparently there.
 
-<Callout type="warning" title="Current Gemini limitation">
-  Native Gemini requests do not yet run the server-side CCR response handler, so
-  `headroom_retrieve` is not resolved transparently on that path today. Google's
-  OpenAI-compatible Gemini endpoint can also return
-  `finish_reason=MALFORMED_FUNCTION_CALL` on large function-response continuations
-  after CCR retrieval. If you need fully transparent CCR resolution today, use the
-  Anthropic or OpenAI proxy paths. See [issue #2041](https://github.com/headroomlabs-ai/headroom/issues/2041).
+<Callout type="warning" title="Gemini CCR boundary">
+  Buffered native Gemini requests resolve `headroom_retrieve` server-side and
+  return the model's final response. Streaming native Gemini requests keep the
+  existing forwarding behavior. When a response contains `headroom_retrieve`
+  alongside a client-owned function call, Headroom preserves both calls for the
+  client instead of resolving the mixed response. Google's OpenAI-compatible Gemini endpoint can
+  also return `finish_reason=MALFORMED_FUNCTION_CALL` on large function-response
+  continuations after CCR retrieval; that separate limitation remains tracked in
+  [issue #2041](https://github.com/headroomlabs-ai/headroom/issues/2041).
 </Callout>
 
 ## Phase 4: Context Tracker

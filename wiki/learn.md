@@ -169,11 +169,12 @@ Options:
 
 `headroom learn --verbosity` analyzes past sessions to infer the ideal output verbosity level for your project and writes a `verbosity.json` profile.
 
-**Important**: the output shaper is **off by default**. Running `--verbosity --apply` will either:
-- Hot-enable the output shaper on a running proxy (`POST /admin/runtime-env`), OR
-- Print instructions to set `HEADROOM_OUTPUT_SHAPER=1` before `headroom wrap ...`
+**Important**: the output shaper is **off by default** and requires the `beta`
+runtime rollout channel. Running `--verbosity --apply` will either:
+- Hot-enable the output shaper on an eligible running proxy (`POST /admin/runtime-env`), OR
+- Print instructions to set `HEADROOM_ROLLOUT_CHANNEL=beta` and `HEADROOM_OUTPUT_SHAPER=1` before `headroom wrap ...`
 
-To keep the shaper on across proxy restarts, add `export HEADROOM_OUTPUT_SHAPER=1` to your shell profile before starting the proxy.
+To keep the shaper on across proxy restarts, export both variables before starting the proxy.
 
 **Flag interactions**:
 - `--all` and `--project` are mutually exclusive

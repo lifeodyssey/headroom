@@ -18,6 +18,7 @@ For the end-to-end visual flow, see [CI/CD Flow Diagrams](/docs/ci-cd-flows).
 | `headroom-ai` | Python | PyPI | `PYPI_PACKAGE` |
 | `headroom-ai` | TypeScript SDK | npmjs.org | `NPM_SDK_PACKAGE` |
 | `headroom-openclaw` | TypeScript plugin | npmjs.org | `NPM_OPENCLAW_PACKAGE` |
+| `headroom-opencode` | TypeScript plugin | npmjs.org | `NPM_OPENCODE_PACKAGE` |
 | `@{owner}/headroom-ai` | TypeScript SDK | GitHub Package Registry | — |
 | `@{owner}/headroom-openclaw` | TypeScript plugin | GitHub Package Registry | — |
 | `headroom-ai-{version}.tar.gz` / `headroom_ai-{version}-py3-none-any.whl` | Python package distributions | GitHub Release (`{owner}/headroom`) | — |
@@ -41,6 +42,7 @@ Release Please calculates the release version from conventional commits and the 
 - `pyproject.toml` - `[project].version`
 - `headroom/_version.py` - `__version__`, synced at build time
 - `plugins/openclaw/package.json` - `version`, synced at build time
+- `plugins/opencode/package.json` - `version`, synced at build time
 - `sdk/typescript/package.json` - `version`, synced at build time
 
 `release.yml` does not commit back to the repo. Version synchronization happens inside the release build workspace.
@@ -98,9 +100,10 @@ Installs the built wheels into representative customer environments and imports 
 Downloads the Python dist artifact and publishes to PyPI via `pypa/gh-action-pypi-publish@release/v1` (trusted publisher).
 
 ### publish-npm
-Publishes both TypeScript packages to npmjs.org:
+Publishes all npm packages to npmjs.org:
 - `sdk/typescript/` as `headroom-ai`
 - `plugins/openclaw/` as `headroom-openclaw`
+- `plugins/opencode/` as `headroom-opencode`
 
 ### publish-github-packages
 Publishes both Node packages to GitHub Package Registry (`npm.pkg.github.com`) using the current repository owner as the npm scope:
@@ -127,6 +130,7 @@ env:
   NPM_REGISTRY_URL: https://registry.npmjs.org
   NPM_SDK_PACKAGE: headroom-ai
   NPM_OPENCLAW_PACKAGE: headroom-openclaw
+  NPM_OPENCODE_PACKAGE: headroom-opencode
   GITHUB_PACKAGES_REGISTRY_URL: https://npm.pkg.github.com
 ```
 

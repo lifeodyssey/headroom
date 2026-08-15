@@ -2,6 +2,26 @@
 
 Headroom can be configured via the SDK, proxy command line, or per-request overrides.
 
+## Runtime Rollout Channels
+
+Rollout channels control behaviors in an already-installed artifact. They do
+not install or select a Headroom release/version.
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `HEADROOM_ROLLOUT_CHANNEL` | `stable` | Selects `stable`, `beta`, `canary`, or `dev`. |
+| `HEADROOM_FEATURES` | unset | Comma-separated feature names to request explicitly. |
+| `HEADROOM_DISABLE_FEATURES` | unset | Comma-separated feature names to force off. Disable wins over every enable path. |
+| `HEADROOM_UNSAFE_ALLOW_UNSTABLE_FEATURES` | unset | Break-glass override for emergency mitigation only. |
+
+Example:
+
+```bash
+export HEADROOM_ROLLOUT_CHANNEL=canary
+export HEADROOM_FEATURES=tool_result_interceptors
+headroom proxy --intercept-tool-results
+```
+
 ## SDK Configuration
 
 ```python
