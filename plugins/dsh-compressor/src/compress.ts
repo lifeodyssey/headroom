@@ -261,6 +261,13 @@ export function compressConversation(
     if (message.compressed === true) {
       return { ...message };
     }
+    // Already-marked content (official skip policy): a locator in the text
+    // means this result was crushed on an earlier pass — pre-step re-derives
+    // messages from the session surface without the in-memory `compressed`
+    // flag, and recompressing would nest locators and bust the prefix cache.
+    if (LOCATOR_PATTERN.test(message.content)) {
+      return { ...message };
+    }
     if (
       estimateTokens(message.content) < MIN_TOKENS_TO_COMPRESS ||
       message.content.length < MIN_CHARS_FOR_BLOCK_COMPRESSION
