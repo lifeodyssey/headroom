@@ -20,6 +20,10 @@ dsh plugin --profile web add dsh-compressor
 dsh plugin --profile web add github:lifeodyssey/dsh-compressor#path:plugins/dsh-compressor
 ```
 
+## Publish
+
+DSH has no plugin store. `dsh plugin add` is `pnpm add`. Publish the folder `plugins/dsh-compressor/` to npm (`npm publish --access public`), or install from a GitHub `#path:plugins/dsh-compressor` spec. Do not publish the repo root.
+
 ## Protocol
 
 - Locator: `<<compressor:64-hex-sha256>>`
