@@ -814,4 +814,32 @@ describe("compressConversation", () => {
     expect(retrieve(crushed, { storeDir })).toBe(payload);
     expect(readdirSync(storeDir)).toHaveLength(1);
   });
+
+  it("does not whole-blob re-crush a non-shrinking mixed payload that has a code fence", () => {
+    const storeDir = tempStore();
+    const fenceBody = [
+      ...Array.from(
+        { length: 80 },
+        (_, index) => `2024-01-01 INFO compiling unit ${index} ok`,
+      ),
+      "def keep_fence_marker_abc123():",
+      "    return 'keep-this-fence-verbatim'",
+    ].join("\n");
+    const payload = `${JSON.stringify([{ id: 1, name: "only" }])}\n\`\`\`python\n${fenceBody}\n\`\`\``;
+    const messages = withProtectedTail([
+      { role: "tool" as const, content: payload, toolName: "bash" },
+    ]);
+
+    const compressed = compressConversation(messages, { storeDir });
+    const crushed = compressed[0]?.content ?? "";
+
+    // Mixed join does not shrink, so the conversation layer may keep the
+    // original. Whole-blob detect would classify this as a build log and
+    // drop the fence; the marker must still be here.
+    expect(crushed).toContain("```python");
+    expect(crushed).toContain("def keep_fence_marker_abc123():");
+    expect(crushed).toContain("keep-this-fence-verbatim");
+    expect(crushed).not.toMatch(/Retrieve more: hash=/);
+    expect(crushed.length).toBeGreaterThan(payload.length / 2);
+  });
 });
