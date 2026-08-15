@@ -2,6 +2,8 @@
 
 DeepSeek Harness bundle. Compresses long tool results in-process and restores them with `compressor_retrieve`.
 
+On 20 redacted real DSH sessions, `Session.deriveMessages()` JSON shrank by **up to 20%**. Official spill left verbatim. Reproduce: `node scripts/measure-sessions.mjs`.
+
 ## Install into a DSH profile
 
 `dsh plugin` forwards to `pnpm` in `$DSH_HOME/profiles/<name>`. Relative paths are resolved from the directory you run `dsh` in.

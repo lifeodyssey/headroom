@@ -2,7 +2,9 @@
 
 In-process [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin. It crushes long tool results (logs, JSON, CJK text, search, diffs) before they hit `Session.deriveMessages()`, stores the original on disk, and gives the model `compressor_retrieve` to get it back.
 
-This repository is a fork of [Headroom](https://github.com/chopratejas/headroom). The product of **this** fork is the DSH plugin, not the Headroom proxy, wrap CLI, or MCP server.
+Crushers are Headroom’s official Rust Log / Smart / Text / Search / Diff, linked in-process. This is not the Headroom proxy, wrap CLI, MCP server, or dashboard.
+
+On 20 redacted real DSH sessions (local `~/.dsh/sessions` fixtures), `Session.deriveMessages()` JSON shrank by **up to 20%**. Official DSH spill left verbatim. Reproduce: `cd plugins/dsh-compressor && node scripts/measure-sessions.mjs`.
 
 ## Install
 
@@ -80,8 +82,7 @@ This is a port of Headroom’s crushers into DSH, not Headroom the product. Prox
 
 - [ ] Code-aware crusher (tree-sitter). The other official Headroom crusher; unlinked so the addon stays small.
 - [ ] Extra napi triples if someone needs them: `win32-x64`, `darwin-x64`, `linux-arm64` (we ship `darwin-arm64` + `linux-x64-gnu`).
-
-Kompress / ONNX stays off.
+- [ ] Kompress / ONNX (Headroom’s ML prose crusher; not linked in the addon yet).
 
 ## License
 
