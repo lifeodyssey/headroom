@@ -4,12 +4,10 @@ Issues and specs for this repo live as GitHub issues on **`lifeodyssey/dsh-compr
 
 ## Repository
 
-This clone is a renamed fork of `headroomlabs-ai/headroom`. Bare `gh` (no `-R`) can resolve to the **parent** and would publish issues upstream.
+Tracker is **`lifeodyssey/dsh-compressor`**, not Headroom upstream.
 
-- **Always** pass `-R lifeodyssey/dsh-compressor` on every `gh` call that creates, lists, edits, or comments on issues.
-- Local default is also pinned (`gh repo set-default lifeodyssey/dsh-compressor`). Still pass `-R` — do not rely on implicit resolution.
-- Never publish specs or tickets to `headroomlabs-ai/headroom` or `chopratejas/headroom`.
-- Upstream remotes stay for `git fetch` / merge only. They are not the issue tracker.
+- Always pass `-R lifeodyssey/dsh-compressor` on `gh` issue/PR calls.
+- Do not file issues on `headroomlabs-ai/headroom` or `chopratejas/headroom`.
 
 ## Conventions
 
