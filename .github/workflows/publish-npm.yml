@@ -1,0 +1,49 @@
+# OIDC trusted publish of plugins/dsh-compressor to npmjs.
+# No NPM_TOKEN. On npmjs.com → dsh-compressor → Trusted Publisher:
+#   user/org: lifeodyssey
+#   repository: dsh-compressor
+#   workflow filename: publish-npm.yml
+#   environment: (leave empty)
+#   allowed action: npm publish
+name: publish-npm
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: plugins/dsh-compressor
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+      # Trusted publishing needs npm CLI >= 11.5.1.
+      - run: npm install -g npm@latest
+      - name: Tag must match package.json version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "tag v${tag} != package.json ${pkg}"
+            exit 1
+          fi
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      - run: npm publish --access public

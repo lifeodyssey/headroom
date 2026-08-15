@@ -20,7 +20,7 @@ dsh plugin --profile web add ./plugins/dsh-compressor
 dsh plugin --profile web add github:lifeodyssey/dsh-compressor#path:plugins/dsh-compressor
 ```
 
-**npm** (after `npm publish` from this directory)
+**npm**
 
 ```bash
 dsh plugin --profile web add dsh-compressor
@@ -58,18 +58,3 @@ pnpm typecheck
 ```
 
 Rebuild JS after source edits: `pnpm build`. Rebuild the native addon only if you change Rust crushers: `pnpm build:native` (needs the repo’s Cargo workspace).
-
-## Publish to npm
-
-The npm name `dsh-compressor` is currently free. Publish **this directory**, not the repository root.
-
-```bash
-pnpm install
-pnpm build
-# confirm files: lib/, native/*.node, cordis.patch.yml
-npm publish --access public
-```
-
-Then users install with `dsh plugin --profile web add dsh-compressor`. Bump `version` in `package.json` for each release.
-
-Requires an npm account with publish rights. Do not commit `.npmrc` tokens.
